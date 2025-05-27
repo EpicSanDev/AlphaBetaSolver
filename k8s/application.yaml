@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: master-node
-        image: ghcr.io/yourusername/gto-solver-backend:latest
+        image: rg.fr-par.scw.cloud/namespace-ecstatic-einstein/epicsandev/alphabetasolver-backend:main
         command: ["python", "-m", "master_node.main"]
         env:
         - name: DATABASE_URL
@@ -130,7 +130,7 @@ spec:
     spec:
       containers:
       - name: compute-node
-        image: ghcr.io/yourusername/gto-solver-backend:latest
+        image: rg.fr-par.scw.cloud/namespace-ecstatic-einstein/epicsandev/alphabetasolver-backend:main
         command: ["python", "-m", "compute_node.agent"]
         env:
         - name: RABBITMQ_HOST
@@ -194,7 +194,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: ghcr.io/yourusername/gto-solver-frontend:latest
+        image: rg.fr-par.scw.cloud/namespace-ecstatic-einstein/epicsandev/alphabetasolver-frontend:main
         ports:
         - containerPort: 80
         resources:
