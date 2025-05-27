@@ -13,7 +13,10 @@ class TestSimulationModel:
             "description": "Test description",
             "simulation_type": "preflop",
             "game_config": {"stack_size": 100, "sb": 0.5, "bb": 1.0},
-            "solver_config": {"max_iterations": 1000, "target_exploitability": 0.5},
+            "solver_config": {
+                "max_iterations": 1000,
+                "target_exploitability": 0.5
+            },
         }
 
         simulation = Simulation(**simulation_data)
@@ -61,7 +64,9 @@ class TestComputeNodeModel:
     async def test_create_compute_node(self, db_session):
         """Test creating a compute node."""
         node = ComputeNode(
-            id="test-node-1", capacity=4, node_metadata={"version": "1.0.0"}
+            id="test-node-1",
+            capacity=4,
+            node_metadata={"version": "1.0.0"}
         )
 
         db_session.add(node)

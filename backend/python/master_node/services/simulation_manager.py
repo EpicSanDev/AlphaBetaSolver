@@ -5,7 +5,6 @@ Gestionnaire de simulations pour orchestrer les calculs distribués.
 import asyncio
 import json
 import logging
-import uuid
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, asdict
@@ -62,7 +61,9 @@ class SimulationManager:
     """Gestionnaire central des simulations GTO."""
 
     def __init__(
-        self, task_queue: TaskQueue = None, storage_path: str = "/tmp/gto_simulations"
+        self,
+        task_queue: TaskQueue = None,
+        storage_path: str = "/tmp/gto_simulations"
     ):
         self.simulations: Dict[str, Simulation] = {}
         self.results: Dict[str, SimulationResults] = {}
@@ -76,7 +77,10 @@ class SimulationManager:
     async def start(self):
         """Démarrer le gestionnaire de simulations."""
         # Connecter la file de tâches si elle n'est pas déjà connectée
-        if hasattr(self.task_queue, "connected") and not self.task_queue.connected:
+        if (
+            hasattr(self.task_queue, "connected") and
+            not self.task_queue.connected
+        ):
             await self.task_queue.connect()
         logger.info("Simulation manager started")
 
@@ -119,7 +123,7 @@ class SimulationManager:
             solver_config=solver_config,
             name=name,
             description=description,
-            estimated_completion_time=estimated_time,
+            estimated_completion_time=estimated_time
         )
 
         self.simulations[simulation_id] = simulation
@@ -177,7 +181,8 @@ class SimulationManager:
 
         except Exception as e:
             logger.error(
-                f"Erreur lors de l'exécution de la simulation {simulation.simulation_id}: {e}"
+                f"Erreur lors de l'exécution de la simulation "
+                f"{simulation.simulation_id}: {e}"
             )
             simulation.status = SimulationStatus.FAILED
             simulation.updated_at = datetime.now()
@@ -231,7 +236,9 @@ class SimulationManager:
 
         # Démarrer la consommation des résultats
         await self.task_queue.consume_results(
-            lambda result: self._process_task_result(simulation.simulation_id, result)
+            lambda result: self._process_task_result(
+                simulation.simulation_id, result
+            )
         )
 
         # Attendre que toutes les tâches soient terminées
@@ -242,7 +249,9 @@ class SimulationManager:
             completed_tasks = await self._count_completed_tasks(
                 simulation.simulation_id
             )
-            simulation.progress_percentage = (completed_tasks / total_tasks) * 100
+            simulation.progress_percentage = (
+                completed_tasks / total_tasks
+            ) * 100
             simulation.updated_at = datetime.now()
 
             # Estimer le temps restant
@@ -274,7 +283,10 @@ class SimulationManager:
         """Traiter le résultat d'une tâche."""
         try:
             # Sauvegarder le résultat partiel
-            result_file = f"{self.storage_path}/{simulation_id}_task_{result_data['task_id']}.json"
+            result_file = (
+                f"{self.storage_path}/{simulation_id}_task_"
+                f"{result_data['task_id']}.json"
+            )
             async with aiofiles.open(result_file, "w") as f:
                 await f.write(json.dumps(result_data))
 
@@ -317,9 +329,12 @@ class SimulationManager:
                                 aggregated_strategy[key] = []
                             aggregated_strategy[key].append(value)
 
-                    total_iterations += data.get("iterations_completed", 0)
+                    total_iterations += data.get(
+                        "iterations_completed", 0
+                    )
                     final_exploitability = max(
-                        final_exploitability, data.get("exploitability", 0.0)
+                        final_exploitability,
+                        data.get("exploitability", 0.0)
                     )
 
         # Moyenner les stratégies
@@ -342,16 +357,20 @@ class SimulationManager:
                 "simulation_type": simulation.simulation_type,
                 "game_config": simulation.game_config,
                 "solver_config": simulation.solver_config,
-                "num_tasks": len(result_files),
-            },
+                "num_tasks": len(result_files)
+            }
         )
 
         self.results[simulation.simulation_id] = results
         await self._save_results(results)
 
-        logger.info(f"Résultats agrégés pour la simulation {simulation.simulation_id}")
+        logger.info(
+            f"Résultats agrégés pour la simulation {simulation.simulation_id}"
+        )
 
-    async def get_simulation_status(self, simulation_id: str) -> Optional[Simulation]:
+    async def get_simulation_status(
+        self, simulation_id: str
+    ) -> Optional[Simulation]:
         """Obtenir le statut d'une simulation."""
         return self.simulations.get(simulation_id)
 
@@ -371,10 +390,14 @@ class SimulationManager:
         simulations = list(self.simulations.values())
 
         if status_filter:
-            simulations = [s for s in simulations if s.status.value == status_filter]
+            simulations = [
+            s for s in simulations if s.status.value == status_filter
+        ]
 
         if type_filter:
-            simulations = [s for s in simulations if s.simulation_type == type_filter]
+            simulations = [
+                s for s in simulations if s.simulation_type == type_filter
+            ]
 
         # Trier par date de création (plus récent en premier)
         simulations.sort(key=lambda s: s.created_at, reverse=True)
@@ -385,8 +408,7 @@ class SimulationManager:
         """Annuler une simulation en cours."""
         simulation = self.simulations.get(simulation_id)
         if not simulation or simulation.status not in [
-            SimulationStatus.PENDING,
-            SimulationStatus.RUNNING,
+            SimulationStatus.PENDING, SimulationStatus.RUNNING
         ]:
             return False
 
@@ -406,7 +428,9 @@ class SimulationManager:
         return [
             sim_id
             for sim_id, sim in self.simulations.items()
-            if sim.status in [SimulationStatus.PENDING, SimulationStatus.RUNNING]
+            if sim.status in [
+                SimulationStatus.PENDING, SimulationStatus.RUNNING
+            ]
         ]
 
     async def get_compute_nodes_status(self) -> List[Dict[str, Any]]:
@@ -419,15 +443,15 @@ class SimulationManager:
                 "status": "active",
                 "current_tasks": 2,
                 "total_capacity": 4,
-                "last_heartbeat": datetime.now().isoformat(),
+                "last_heartbeat": datetime.now().isoformat()
             },
             {
                 "node_id": "compute-node-2",
                 "status": "active",
                 "current_tasks": 1,
                 "total_capacity": 4,
-                "last_heartbeat": datetime.now().isoformat(),
-            },
+                "last_heartbeat": datetime.now().isoformat()
+            }
         ]
 
     async def _save_simulation(self, simulation: Simulation):

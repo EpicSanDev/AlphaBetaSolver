@@ -18,7 +18,9 @@ class Settings(BaseSettings):
     RABBITMQ_QUEUE_POSTFLOP: str = "postflop_tasks"
 
     # Database Configuration
-    DATABASE_URL: str = "postgresql://gto_user:gto_password@localhost:5432/gto_solver"
+    DATABASE_URL: str = (
+        "postgresql://gto_user:gto_password@localhost:5432/gto_solver"
+    )
 
     # Redis Configuration
     REDIS_URL: str = "redis://localhost:6379"

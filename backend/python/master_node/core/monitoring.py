@@ -21,7 +21,7 @@ from prometheus_client import (
 import psutil
 import aioredis
 from sqlalchemy import text
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from .config import settings
 from .database import get_db_session
@@ -107,7 +107,7 @@ class MetricsCollector:
             "gto_queue_processing_time_seconds",
             "Queue message processing time",
             ["queue_name"],
-            registry=self.registry,
+            registry=self.registry
         )
 
         # System Metrics
@@ -125,7 +125,7 @@ class MetricsCollector:
             "gto_system_disk_usage_percent",
             "System disk usage",
             ["mount_point"],
-            registry=self.registry,
+            registry=self.registry
         )
 
         # Database Metrics

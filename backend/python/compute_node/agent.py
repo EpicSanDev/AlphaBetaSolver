@@ -6,13 +6,10 @@ Consomme les tâches de la file RabbitMQ et exécute les simulations C++.
 import asyncio
 import json
 import logging
-import subprocess
 import tempfile
 import os
 from typing import Dict, Any, Optional
 import aio_pika
-from aio_pika import ExchangeType
-import pydantic
 from pydantic import BaseModel
 
 # Configuration du logging
@@ -88,7 +85,9 @@ class ComputeAgent:
                 try:
                     await self.process_message(message)
                 except Exception as e:
-                    logger.error(f"Erreur lors du traitement du message: {e}")
+                    logger.error(
+                        f"Erreur lors du traitement du message: {e}"
+                    )
                     await message.nack(requeue=False)
 
     async def process_message(self, message: aio_pika.IncomingMessage):
@@ -141,7 +140,9 @@ class ComputeAgent:
 
                 # Exécuter le processus C++
                 process = await asyncio.create_subprocess_exec(
-                    *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
                 )
 
                 stdout, stderr = await process.communicate()
@@ -169,7 +170,10 @@ class ComputeAgent:
                     return TaskResult(
                         task_id=task_config.task_id,
                         success=False,
-                        error_message=f"Le processus a échoué avec le code {process.returncode}: {error_msg}",
+                        error_message=(
+                            f"Le processus a échoué avec le code "
+                            f"{process.returncode}: {error_msg}"
+                        ),
                         execution_time_ms=execution_time,
                     )
 
@@ -179,7 +183,9 @@ class ComputeAgent:
                     os.unlink(params_file)
 
         except Exception as e:
-            execution_time = int((asyncio.get_event_loop().time() - start_time) * 1000)
+            execution_time = int(
+                (asyncio.get_event_loop().time() - start_time) * 1000
+            )
             return TaskResult(
                 task_id=task_config.task_id,
                 success=False,
@@ -193,7 +199,8 @@ class ComputeAgent:
             raise RuntimeError("Canal RabbitMQ non initialisé")
 
         result_message = aio_pika.Message(
-            result.json().encode(), delivery_mode=aio_pika.DeliveryMode.PERSISTENT
+            result.json().encode(),
+            delivery_mode=aio_pika.DeliveryMode.PERSISTENT
         )
 
         await self.channel.default_exchange.publish(
@@ -212,14 +219,18 @@ async def main():
     """Point d'entrée principal de l'agent de calcul."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Agent de calcul pour le solveur GTO")
+    parser = argparse.ArgumentParser(
+        description="Agent de calcul pour le solveur GTO"
+    )
     parser.add_argument(
         "--rabbitmq-url",
         default="amqp://guest:guest@localhost/",
         help="URL de connexion RabbitMQ",
     )
     parser.add_argument(
-        "--queue-name", default="computation_tasks", help="Nom de la queue des tâches"
+        "--queue-name",
+        default="computation_tasks",
+        help="Nom de la queue des tâches"
     )
     parser.add_argument(
         "--result-queue",

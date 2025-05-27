@@ -11,6 +11,7 @@ from master_node.core.config import settings
 from master_node.db import init_db, close_db
 from master_node.services.task_queue import TaskQueue
 from master_node.services.simulation_manager import SimulationManager
+from master_node.api import endpoints
 
 # Configure logging
 logging.basicConfig(
@@ -49,7 +50,8 @@ async def lifespan(app: FastAPI):
 
         # Initialize simulation manager
         simulation_manager = SimulationManager(
-            task_queue, settings.SIMULATION_STORAGE_PATH
+            task_queue,
+            settings.SIMULATION_STORAGE_PATH
         )
         await simulation_manager.start()
         logger.info("Simulation manager started")
@@ -109,9 +111,6 @@ async def root():
         "status": "running",
     }
 
-
-# Include API routes
-from master_node.api import endpoints
 
 app.include_router(endpoints.router, prefix=settings.API_V1_STR)
 

@@ -5,7 +5,8 @@ Authentication endpoints for the GTO Poker Solver API.
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
+from sqlalchemy import select
+from typing import List
 
 from ..core.security import auth_handler, get_current_user, require_permission
 from ..db.database import get_db_session
@@ -99,7 +100,8 @@ async def login(
 
     if not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User account is disabled"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is disabled"
         )
 
     # Create access token
@@ -187,6 +189,11 @@ async def revoke_api_key(
 
 
 @router.get("/me")
-async def get_current_user_info(current_user: dict = Depends(get_current_user)):
+async def get_current_user_info(
+    current_user: dict = Depends(get_current_user)
+):
     """Get current user information."""
-    return {"user_id": current_user["sub"], "permissions": current_user["permissions"]}
+    return {
+        "user_id": current_user["sub"],
+        "permissions": current_user["permissions"]
+    }

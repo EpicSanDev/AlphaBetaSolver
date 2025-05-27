@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import AsyncMock, patch
 
 
@@ -31,8 +30,15 @@ class TestAPI:
             "simulation_type": "preflop",
             "name": "Test Simulation",
             "description": "Test description",
-            "game_config": {"stack_size": 100, "small_blind": 0.5, "big_blind": 1.0},
-            "solver_config": {"max_iterations": 1000, "target_exploitability": 0.5},
+            "game_config": {
+                "stack_size": 100,
+                "small_blind": 0.5,
+                "big_blind": 1.0
+            },
+            "solver_config": {
+                "max_iterations": 1000,
+                "target_exploitability": 0.5
+            },
         }
 
         response = client.post("/api/v1/simulations", json=simulation_data)

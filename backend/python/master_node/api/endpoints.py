@@ -1,12 +1,8 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Any
-import asyncio
-import json
 import uuid
 from datetime import datetime
-import aio_pika
-from ..core.config import settings
 from ..services.simulation_manager import SimulationManager
 from ..services.task_queue import TaskQueue
 
@@ -63,9 +59,14 @@ async def get_status():
     }
 
 
-@router.post("/simulations", status_code=201, response_model=SimulationResponse)
+@router.post(
+    "/simulations",
+    status_code=201,
+    response_model=SimulationResponse
+)
 async def create_simulation(
-    simulation_request: SimulationRequest, background_tasks: BackgroundTasks
+    simulation_request: SimulationRequest,
+    background_tasks: BackgroundTasks
 ):
     """Créer et démarrer une nouvelle simulation."""
     try:
@@ -96,16 +97,23 @@ async def create_simulation(
             simulation_id=simulation_id,
             status="started",
             created_at=simulation.created_at,
-            estimated_completion_time=simulation.estimated_completion_time,
+            estimated_completion_time=(
+                simulation.estimated_completion_time
+            ),
         )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/simulations", response_model=List[SimulationResponse])
+@router.get(
+    "/simulations",
+    response_model=List[SimulationResponse]
+)
 async def list_simulations(
-    status: Optional[str] = None, simulation_type: Optional[str] = None, limit: int = 50
+    status: Optional[str] = None,
+    simulation_type: Optional[str] = None,
+    limit: int = 50
 ):
     """Lister les simulations."""
     try:
@@ -118,7 +126,9 @@ async def list_simulations(
                 simulation_id=sim.simulation_id,
                 status=sim.status,
                 created_at=sim.created_at,
-                estimated_completion_time=sim.estimated_completion_time,
+                estimated_completion_time=(
+                    sim.estimated_completion_time
+                ),
             )
             for sim in simulations
         ]
@@ -127,7 +137,10 @@ async def list_simulations(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/simulations/{simulation_id}/status", response_model=SimulationStatus)
+@router.get(
+    "/simulations/{simulation_id}/status",
+    response_model=SimulationStatus
+)
 async def get_simulation_status(simulation_id: str):
     """Obtenir le statut d'une simulation."""
     try:
@@ -143,8 +156,12 @@ async def get_simulation_status(simulation_id: str):
             status=status.status,
             progress_percentage=status.progress_percentage,
             iterations_completed=status.iterations_completed,
-            current_exploitability=status.current_exploitability,
-            estimated_time_remaining=status.estimated_time_remaining,
+            current_exploitability=(
+                status.current_exploitability
+            ),
+            estimated_time_remaining=(
+                status.estimated_time_remaining
+            ),
         )
 
     except HTTPException:
@@ -153,7 +170,10 @@ async def get_simulation_status(simulation_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/simulations/{simulation_id}/results", response_model=SimulationResult)
+@router.get(
+    "/simulations/{simulation_id}/results",
+    response_model=SimulationResult
+)
 async def get_simulation_results(simulation_id: str):
     """Obtenir les résultats d'une simulation terminée."""
     try:

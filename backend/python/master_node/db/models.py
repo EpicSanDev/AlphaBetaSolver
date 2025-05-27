@@ -40,10 +40,14 @@ class Simulation(Base):
 
     # Relationships
     tasks = relationship(
-        "Task", back_populates="simulation", cascade="all, delete-orphan"
+        "Task",
+        back_populates="simulation",
+        cascade="all, delete-orphan"
     )
     results = relationship(
-        "SimulationResult", back_populates="simulation", cascade="all, delete-orphan"
+        "SimulationResult",
+        back_populates="simulation",
+        cascade="all, delete-orphan"
     )
 
 

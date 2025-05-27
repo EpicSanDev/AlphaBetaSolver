@@ -2,12 +2,10 @@
 Gestionnaire de files de tâches avec RabbitMQ pour la distribution des calculs.
 """
 
-import asyncio
 import json
 import logging
 from typing import Dict, Any, Optional
 import aio_pika
-from aio_pika import ExchangeType
 from ..core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -27,7 +25,10 @@ class TaskQueue:
             return
 
         try:
-            rabbitmq_url = f"amqp://{settings.RABBITMQ_USER}:{settings.RABBITMQ_PASSWORD}@{settings.RABBITMQ_HOST}:{settings.RABBITMQ_PORT}/"
+            rabbitmq_url = (
+                f"amqp://{settings.RABBITMQ_USER}:{settings.RABBITMQ_PASSWORD}"
+                f"@{settings.RABBITMQ_HOST}:{settings.RABBITMQ_PORT}/"
+            )
             self.connection = await aio_pika.connect_robust(rabbitmq_url)
             self.channel = await self.connection.channel()
 
@@ -67,10 +68,13 @@ class TaskQueue:
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
             )
 
-            await self.channel.default_exchange.publish(message, routing_key=queue_name)
+            await self.channel.default_exchange.publish(
+                message, routing_key=queue_name
+            )
 
             logger.info(
-                f"Tâche publiée dans {queue_name}: {task_data.get('task_id', 'N/A')}"
+                f"Tâche publiée dans {queue_name}: "
+                f"{task_data.get('task_id', 'N/A')}"
             )
             return True
 
@@ -86,19 +90,31 @@ class TaskQueue:
         try:
             # Declare queues to get their status
             preflop_queue = await self.channel.declare_queue(
-                settings.RABBITMQ_QUEUE_PREFLOP, durable=True, passive=True
+                settings.RABBITMQ_QUEUE_PREFLOP,
+                durable=True,
+                passive=True
             )
             postflop_queue = await self.channel.declare_queue(
-                settings.RABBITMQ_QUEUE_POSTFLOP, durable=True, passive=True
+                settings.RABBITMQ_QUEUE_POSTFLOP,
+                durable=True,
+                passive=True
             )
             results_queue = await self.channel.declare_queue(
-                "computation_results", durable=True, passive=True
+                "computation_results",
+                durable=True,
+                passive=True
             )
 
             return {
-                "preflop_tasks": preflop_queue.declaration_result.message_count,
-                "postflop_tasks": postflop_queue.declaration_result.message_count,
-                "pending_results": results_queue.declaration_result.message_count,
+                "preflop_tasks": (
+                    preflop_queue.declaration_result.message_count
+                ),
+                "postflop_tasks": (
+                    postflop_queue.declaration_result.message_count
+                ),
+                "pending_results": (
+                    results_queue.declaration_result.message_count
+                ),
                 "connected": self.connected,
             }
 
