@@ -1,0 +1,298 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ created ]
+
+env:
+  REGISTRY: rg.fr-par.scw.cloud/namespace-ecstatic-einstein
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Code Quality and Testing
+  quality-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install Python dependencies
+      run: |
+        cd backend/python
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov black flake8 mypy bandit safety
+    
+    - name: Code formatting check
+      run: |
+        cd backend/python
+        black --check .
+    
+    - name: Linting
+      run: |
+        cd backend/python
+        flake8 .
+    
+    - name: Type checking
+      run: |
+        cd backend/python
+        mypy .
+    
+    - name: Security scan
+      run: |
+        cd backend/python
+        bandit -r .
+        safety check
+    
+    - name: Run tests
+      run: |
+        cd backend/python
+        pytest tests/ -v --cov=. --cov-report=xml
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/python/coverage.xml
+
+  # C++ Build and Test
+  cpp-build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install C++ dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake pkg-config libjsoncpp-dev
+    
+    - name: Build C++ solver
+      run: |
+        cd backend
+        mkdir -p build
+        cd build
+        cmake ..
+        make
+    
+    - name: Run C++ tests
+      run: |
+        cd backend/build
+        ctest --output-on-failure
+
+  # Security Scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Build and Push Docker Images
+  build-and-push:
+    needs: [quality-check, cpp-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: [backend, frontend]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Scaleway Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: nologin  # Scaleway utilise 'nologin' comme nom d'utilisateur
+        password: ${{ secrets.SCW_SECRET_KEY }}  # Votre clé d'API Scaleway
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.image }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.${{ matrix.image }}
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # Integration Tests
+  integration-tests:
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: gto_solver_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      rabbitmq:
+        image: rabbitmq:3-management-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: test_user
+          RABBITMQ_DEFAULT_PASS: test_password
+        ports:
+          - 5672:5672
+          - 15672:15672
+      
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Compose
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y docker-compose
+    
+    - name: Run integration tests
+      env:
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/gto_solver_test
+        RABBITMQ_HOST: localhost
+        RABBITMQ_USER: test_user
+        RABBITMQ_PASSWORD: test_password
+        REDIS_URL: redis://localhost:6379
+      run: |
+        cd backend/python
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pytest tests/integration/ -v
+
+  # Load Testing
+  load-test:
+    needs: [integration-tests]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up k6
+      run: |
+        sudo gpg -k
+        sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+        echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+        sudo apt-get update
+        sudo apt-get install k6
+    
+    - name: Start test environment
+      run: |
+        docker-compose up -d
+        sleep 30  # Wait for services to be ready
+    
+    - name: Run load tests
+      run: |
+        k6 run tests/load/api-load-test.js
+    
+    - name: Clean up
+      run: |
+        docker-compose down
+
+  # Deploy to Staging
+  deploy-staging:
+    needs: [integration-tests]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        # Add deployment logic here
+        # Example: kubectl apply -f k8s/staging/
+    
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests..."
+        # Add smoke test logic here
+
+  # Deploy to Production
+  deploy-production:
+    needs: [load-test]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    environment: production
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to production
+      run: |
+        echo "Deploying to production environment..."
+        # Add production deployment logic here
+        # Example: kubectl apply -f k8s/production/
+    
+    - name: Run smoke tests
+      run: |
+        echo "Running production smoke tests..."
+        # Add production smoke test logic here
+    
+    - name: Notify deployment
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        custom_payload: |
+          {
+            text: "🚀 GTO Poker Solver deployed to production!",
+            blocks: [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: "🚀 *GTO Poker Solver* has been successfully deployed to production!\n\n*Version:* ${{ github.event.release.tag_name }}\n*Commit:* ${{ github.sha }}"
+                }
+              }
+            ]
+          }
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

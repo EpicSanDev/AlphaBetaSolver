@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GTO Poker Solver</title>
+    <link rel="stylesheet" href="styles.css" type="text/css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="api-gateway.js"></script>
+    <script src="strategy-visualizer.js"></script>
+    <!-- Style interne de secours au cas où le fichier CSS ne se chargerait pas -->
+    <style>
+        /* Styles essentiels pour l'application */
+        :root {
+            --primary-color: #667eea;
+            --primary-dark: #5a6fd8;
+            --secondary-color: #764ba2;
+            --success-color: #27ae60;
+            --warning-color: #f39c12;
+            --danger-color: #e74c3c;
+            --light-color: #f5f7fa;
+            --dark-color: #2c3e50;
+            --gray-color: #95a5a6;
+            --border-radius: 10px;
+            --box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            --transition: all 0.3s ease;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            min-height: 100vh;
+            color: var(--dark-color);
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: var(--border-radius);
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: var(--box-shadow);
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: var(--transition);
+            display: inline-block;
+            text-align: center;
+        }
+        
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .nav-tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+        
+        .nav-tab {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            color: var(--gray-color);
+            border-bottom: 3px solid transparent;
+        }
+        
+        .nav-tab.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+        }
+        
+        .simulation-item {
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="container">
+            <div class="header">
+                <h1>🃏 GTO Poker Solver</h1>
+                <p>Solveur de poker distribué avec algorithme CFR+</p>
+            </div>
+            
+            <div class="card">
+                <div class="nav-tabs">
+                    <button class="nav-tab" :class="{active: activeTab === 'create'}" @click="activeTab = 'create'">
+                        Nouvelle Simulation
+                    </button>
+                    <button class="nav-tab" :class="{active: activeTab === 'monitor'}" @click="activeTab = 'monitor'">
+                        Surveillance
+                    </button>
+                    <button class="nav-tab" :class="{active: activeTab === 'results'}" @click="activeTab = 'results'">
+                        Résultats
+                    </button>
+                    <button class="nav-tab" :class="{active: activeTab === 'status'}" @click="activeTab = 'status'">
+                        Système
+                    </button>
+                </div>
+                
+                <!-- Tab: Nouvelle Simulation -->
+                <div v-if="activeTab === 'create'">
+                    <h3>Créer une nouvelle simulation</h3>
+                    
+                    <div class="form-group">
+                        <label>Type de simulation</label>
+                        <select v-model="newSimulation.type" class="form-control">
+                            <option value="preflop">Préflop</option>
+                            <option value="postflop">Postflop</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Nom (optionnel)</label>
+                        <input v-model="newSimulation.name" class="form-control" placeholder="Nom de la simulation">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Description (optionnelle)</label>
+                        <textarea v-model="newSimulation.description" class="form-control" rows="3" placeholder="Description de la simulation"></textarea>
+                    </div>
+                    
+                    <div class="grid">
+                        <div>
+                            <h4>Configuration du jeu</h4>
+                            <div class="form-group">
+                                <label>Nombre de joueurs</label>
+                                <input v-model.number="newSimulation.gameConfig.numPlayers" type="number" class="form-control" min="2" max="9" value="2">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Stack size (BB)</label>
+                                <input v-model.number="newSimulation.gameConfig.stackSize" type="number" class="form-control" value="100">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Small Blind</label>
+                                <input v-model.number="newSimulation.gameConfig.smallBlind" type="number" class="form-control" value="0.5" step="0.1">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Big Blind</label>
+                                <input v-model.number="newSimulation.gameConfig.bigBlind" type="number" class="form-control" value="1" step="0.1">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4>Configuration du solveur</h4>
+                            <div class="form-group">
+                                <label>Itérations maximales</label>
+                                <input v-model.number="newSimulation.solverConfig.maxIterations" type="number" class="form-control" value="1000">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Exploitabilité cible (%)</label>
+                                <input v-model.number="newSimulation.solverConfig.targetExploitability" type="number" class="form-control" value="0.5" step="0.1">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Taille de batch</label>
+                                <input v-model.number="newSimulation.solverConfig.batchSize" type="number" class="form-control" value="100">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>
+                                    <input v-model="newSimulation.solverConfig.useChanceSampling" type="checkbox">
+                                    Utiliser le chance sampling
+                                </label>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>
+                                    <input v-model="newSimulation.solverConfig.useDiscounting" type="checkbox">
+                                    Utiliser le discounting
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div v-if="createError" class="error">{{ createError }}</div>
+                    <div v-if="createSuccess" class="success">{{ createSuccess }}</div>
+                    
+                    <button @click="createSimulation" class="btn btn-primary" :disabled="isCreating">
+                        {{ isCreating ? 'Création...' : 'Démarrer la simulation' }}
+                    </button>
+                </div>
+                
+                <!-- Tab: Surveillance -->
+                <div v-if="activeTab === 'monitor'">
+                    <h3>Simulations en cours</h3>
+                    
+                    <div v-if="loadingSimulations" class="loading">
+                        Chargement des simulations...
+                    </div>
+                    
+                    <div v-for="simulation in activeSimulations" :key="simulation.simulation_id" class="simulation-item">
+                        <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 10px;">
+                            <div>
+                                <h4>{{ simulation.name || simulation.simulation_id }}</h4>
+                                <span class="status-badge" :class="'status-' + simulation.status">{{ simulation.status }}</span>
+                            </div>
+                            <button @click="cancelSimulation(simulation.simulation_id)" class="btn btn-danger" v-if="simulation.status === 'running'">
+                                Annuler
+                            </button>
+                        </div>
+                        
+                        <div v-if="simulationStatuses[simulation.simulation_id]">
+                            <div class="progress-bar">
+                                <div class="progress-fill" :style="{width: simulationStatuses[simulation.simulation_id].progress_percentage + '%'}"></div>
+                            </div>
+                            <p style="margin-top: 5px; font-size: 14px; color: #666;">
+                                Progrès: {{ simulationStatuses[simulation.simulation_id].progress_percentage.toFixed(1) }}% 
+                                ({{ simulationStatuses[simulation.simulation_id].iterations_completed }} itérations)
+                            </p>
+                            <p v-if="simulationStatuses[simulation.simulation_id].current_exploitability" style="font-size: 14px; color: #666;">
+                                Exploitabilité actuelle: {{ simulationStatuses[simulation.simulation_id].current_exploitability.toFixed(4) }}
+                            </p>
+                            <p v-if="simulationStatuses[simulation.simulation_id].estimated_time_remaining" style="font-size: 14px; color: #666;">
+                                Temps restant estimé: {{ formatTime(simulationStatuses[simulation.simulation_id].estimated_time_remaining) }}
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div v-if="activeSimulations.length === 0 && !loadingSimulations">
+                        <p style="text-align: center; color: #666; padding: 40px;">
+                            Aucune simulation active
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Tab: Résultats -->
+                <div v-if="activeTab === 'results'">
+                    <h3>Résultats des simulations</h3>
+                    
+                    <div v-if="loadingResults" class="loading">
+                        Chargement des résultats...
+                    </div>
+                    
+                    <div v-for="simulation in completedSimulations" :key="simulation.simulation_id" class="simulation-item">
+                        <h4>{{ simulation.name || simulation.simulation_id }}</h4>
+                        <span class="status-badge status-completed">{{ simulation.status }}</span>
+                        
+                        <div v-if="simulationResults[simulation.simulation_id]" style="margin-top: 15px;">
+                            <div class="grid">
+                                <div>
+                                    <h5>Métriques</h5>
+                                    <p><strong>Exploitabilité finale:</strong> {{ simulationResults[simulation.simulation_id].final_exploitability.toFixed(4) }}</p>
+                                    <p><strong>Itérations:</strong> {{ simulationResults[simulation.simulation_id].iterations_completed }}</p>
+                                    <p><strong>Temps de convergence:</strong> {{ formatTime(simulationResults[simulation.simulation_id].convergence_time) }}</p>
+                                </div>
+                                <div>
+                                    <h5>Actions</h5>
+                                    <button @click="downloadStrategy(simulation.simulation_id)" class="btn btn-primary" style="margin-right: 10px;">
+                                        Télécharger stratégie
+                                    </button>
+                                    <button @click="toggleStrategyVisualizer(simulation.simulation_id)" class="btn" :class="{'btn-primary': showStrategyVisualizer && selectedSimulationForVisualization === simulation.simulation_id}">
+                                        {{ (showStrategyVisualizer && selectedSimulationForVisualization === simulation.simulation_id) ? 'Masquer visualisation' : 'Visualiser stratégie' }}
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Visualiseur de stratégie -->
+                            <div v-if="showStrategyVisualizer && selectedSimulationForVisualization === simulation.simulation_id">
+                                <strategy-visualizer 
+                                    :strategy="simulationResults[simulation.simulation_id].final_strategy"
+                                    :player="0"
+                                ></strategy-visualizer>
+                            </div>
+                        </div>
+                        
+                        <button v-else @click="loadResults(simulation.simulation_id)" class="btn btn-primary">
+                            Charger résultats
+                        </button>
+                    </div>
+                    
+                    <div v-if="completedSimulations.length === 0 && !loadingResults">
+                        <p style="text-align: center; color: #666; padding: 40px;">
+                            Aucune simulation terminée
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Tab: Système -->
+                <div v-if="activeTab === 'status'">
+                    <h3>Statut du système</h3>
+                    
+                    <div class="grid">
+                        <div>
+                            <h4>Nœud Maître</h4>
+                            <div v-if="systemStatus">
+                                <p><strong>Statut:</strong> {{ systemStatus.status }}</p>
+                                <p><strong>Simulations actives:</strong> {{ systemStatus.active_simulations }}</p>
+                                <p><strong>Dernière mise à jour:</strong> {{ new Date(systemStatus.timestamp).toLocaleString() }}</p>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4>Files de messages</h4>
+                            <div v-if="queueStatus">
+                                <p><strong>Tâches préflop:</strong> {{ queueStatus.preflop_tasks }}</p>
+                                <p><strong>Tâches postflop:</strong> {{ queueStatus.postflop_tasks }}</p>
+                                <p><strong>Résultats en attente:</strong> {{ queueStatus.pending_results }}</p>
+                                <p><strong>Connexion:</strong> {{ queueStatus.connected ? 'Connecté' : 'Déconnecté' }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h4>Nœuds de calcul</h4>
+                        <div v-if="computeNodes && computeNodes.length > 0">
+                            <div v-for="node in computeNodes" :key="node.node_id" class="simulation-item">
+                                <h5>{{ node.node_id }}</h5>
+                                <p><strong>Statut:</strong> {{ node.status }}</p>
+                                <p><strong>Tâches actives:</strong> {{ node.current_tasks }} / {{ node.total_capacity }}</p>
+                                <p><strong>Dernier heartbeat:</strong> {{ new Date(node.last_heartbeat).toLocaleString() }}</p>
+                            </div>
+                        </div>
+                        <div v-else>
+                            <p style="color: #666;">Aucun nœud de calcul disponible</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+        
+        createApp({
+            components: {
+                'strategy-visualizer': StrategyVisualizer
+            },
+            data() {
+                return {
+                    activeTab: 'create',
+                    
+                    // Nouvelle simulation
+                    newSimulation: {
+                        type: 'preflop',
+                        name: '',
+                        description: '',
+                        gameConfig: {
+                            numPlayers: 2,
+                            stackSize: 100,
+                            smallBlind: 0.5,
+                            bigBlind: 1.0
+                        },
+                        solverConfig: {
+                            maxIterations: 1000,
+                            targetExploitability: 0.5,
+                            batchSize: 100,
+                            useChanceSampling: true,
+                            useDiscounting: true
+                        }
+                    },
+                    isCreating: false,
+                    createError: '',
+                    createSuccess: '',
+                    
+                    // Surveillance
+                    activeSimulations: [],
+                    simulationStatuses: {},
+                    loadingSimulations: false,
+                    
+                    // Résultats
+                    completedSimulations: [],
+                    simulationResults: {},
+                    loadingResults: false,
+                    
+                    // Visualisation de stratégie
+                    selectedSimulationForVisualization: null,
+                    showStrategyVisualizer: false,
+                    
+                    // Système
+                    systemStatus: null,
+                    queueStatus: null,
+                    computeNodes: [],
+                    
+                    // Polling
+                    statusInterval: null
+                }
+            },
+            
+            async mounted() {
+                await this.loadSystemStatus();
+                await this.loadSimulations();
+                this.startStatusPolling();
+            },
+            
+            beforeUnmount() {
+                if (this.statusInterval) {
+                    clearInterval(this.statusInterval);
+                }
+            },
+            
+            methods: {
+                async createSimulation() {
+                    this.isCreating = true;
+                    this.createError = '';
+                    this.createSuccess = '';
+                    
+                    try {
+                        // Utiliser l'API Gateway
+                        const requestData = ApiGateway.formatSimulationForSubmission(this.newSimulation);
+                        const response = await ApiGateway.createSimulation(requestData);
+                        
+                        this.createSuccess = `Simulation créée avec succès: ${response.data.simulation_id}`;
+                        
+                        // Réinitialiser le formulaire
+                        this.newSimulation.name = '';
+                        this.newSimulation.description = '';
+                        
+                        // Recharger les simulations
+                        await this.loadSimulations();
+                        
+                        // Basculer vers l'onglet surveillance
+                        this.activeTab = 'monitor';
+                        
+                    } catch (error) {
+                        this.createError = error.response?.data?.detail || 'Erreur lors de la création de la simulation';
+                    } finally {
+                        this.isCreating = false;
+                    }
+                },
+                
+                async loadSimulations() {
+                    this.loadingSimulations = true;
+                    
+                    try {
+                        // Charger les simulations actives
+                        const activeResponse = await ApiGateway.listSimulations({status: 'running'});
+                        const pendingResponse = await ApiGateway.listSimulations({status: 'pending'});
+                        this.activeSimulations = [...activeResponse.data, ...pendingResponse.data];
+                        
+                        // Charger les simulations terminées
+                        const completedResponse = await ApiGateway.listSimulations({status: 'completed'});
+                        this.completedSimulations = completedResponse.data;
+                        
+                        // Charger le statut détaillé des simulations actives
+                        for (const sim of this.activeSimulations) {
+                            await this.loadSimulationStatus(sim.simulation_id);
+                        }
+                        
+                    } catch (error) {
+                        console.error('Erreur lors du chargement des simulations:', error);
+                    } finally {
+                        this.loadingSimulations = false;
+                    }
+                },
+                
+                async loadSimulationStatus(simulationId) {
+                    try {
+                        const response = await ApiGateway.getSimulationStatus(simulationId);
+                        this.simulationStatuses[simulationId] = response.data;
+                    } catch (error) {
+                        console.error(`Erreur lors du chargement du statut de ${simulationId}:`, error);
+                    }
+                },
+                
+                async cancelSimulation(simulationId) {
+                    if (!confirm('Êtes-vous sûr de vouloir annuler cette simulation ?')) {
+                        return;
+                    }
+                    
+                    try {
+                        await ApiGateway.cancelSimulation(simulationId);
+                        await this.loadSimulations();
+                    } catch (error) {
+                        alert('Erreur lors de l\'annulation de la simulation');
+                    }
+                },
+                
+                async loadResults(simulationId) {
+                    this.loadingResults = true;
+                    
+                    try {
+                        const response = await ApiGateway.getSimulationResults(simulationId);
+                        this.simulationResults[simulationId] = response.data;
+                        
+                        // Préparer pour la visualisation
+                        this.selectedSimulationForVisualization = simulationId;
+                    } catch (error) {
+                        alert('Erreur lors du chargement des résultats');
+                    } finally {
+                        this.loadingResults = false;
+                    }
+                },
+                
+                async downloadStrategy(simulationId) {
+                    try {
+                        const results = this.simulationResults[simulationId];
+                        ApiGateway.exportStrategyAsJson(results.final_strategy);
+                    } catch (error) {
+                        alert('Erreur lors du téléchargement de la stratégie');
+                    }
+                },
+                
+                async loadSystemStatus() {
+                    try {
+                        const [statusResponse, queueResponse, nodesResponse] = await Promise.all([
+                            ApiGateway.getSystemStatus(),
+                            ApiGateway.getQueueStatus(),
+                            ApiGateway.getComputeNodes()
+                        ]);
+                        
+                        this.systemStatus = statusResponse.data;
+                        this.queueStatus = queueResponse.data;
+                        this.computeNodes = nodesResponse.data.compute_nodes;
+                        
+                    } catch (error) {
+                        console.error('Erreur lors du chargement du statut système:', error);
+                    }
+                },
+                
+                startStatusPolling() {
+                    this.statusInterval = setInterval(async () => {
+                        await this.loadSystemStatus();
+                        
+                        // Mettre à jour le statut des simulations actives
+                        for (const sim of this.activeSimulations) {
+                            await this.loadSimulationStatus(sim.simulation_id);
+                        }
+                        
+                        // Recharger automatiquement la liste si nécessaire
+                        if (this.activeSimulations.some(sim => 
+                            this.simulationStatuses[sim.simulation_id]?.status === 'completed')) {
+                            await this.loadSimulations();
+                        }
+                    }, 5000); // Toutes les 5 secondes
+                },
+                
+                formatTime(seconds) {
+                    if (!seconds) return '0s';
+                    
+                    if (seconds < 60) {
+                        return `${Math.round(seconds)}s`;
+                    } else if (seconds < 3600) {
+                        return `${Math.floor(seconds / 60)}min ${Math.round(seconds % 60)}s`;
+                    } else {
+                        return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}min`;
+                    }
+                },
+                
+                toggleStrategyVisualizer(simulationId) {
+                    if (this.selectedSimulationForVisualization === simulationId && this.showStrategyVisualizer) {
+                        this.showStrategyVisualizer = false;
+                    } else {
+                        this.selectedSimulationForVisualization = simulationId;
+                        this.showStrategyVisualizer = true;
+                    }
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

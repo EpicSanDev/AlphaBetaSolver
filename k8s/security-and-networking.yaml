@@ -1,0 +1,162 @@
+# Application Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+  namespace: gto-solver
+type: Opaque
+stringData:
+  database-url: postgresql://gto_user:CHANGE_THIS_PASSWORD@postgres:5432/gto_solver
+  secret-key: CHANGE_THIS_SECRET_KEY_IN_PRODUCTION
+  jwt-secret-key: CHANGE_THIS_JWT_SECRET_KEY_IN_PRODUCTION
+
+---
+# PostgreSQL Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: gto-solver
+type: Opaque
+stringData:
+  username: gto_user
+  password: CHANGE_THIS_PASSWORD
+
+---
+# RabbitMQ Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rabbitmq-secret
+  namespace: gto-solver
+type: Opaque
+stringData:
+  username: gto_user
+  password: CHANGE_THIS_PASSWORD
+
+---
+# PostgreSQL Init Script ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: gto-solver
+data:
+  init.sql: |
+    -- GTO Poker Solver Database Initialization
+    
+    -- Create extensions
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+    
+    -- Create indexes for performance
+    -- (These will be created by the application migrations)
+    
+    -- Grant permissions
+    GRANT ALL PRIVILEGES ON DATABASE gto_solver TO gto_user;
+
+---
+# Ingress for external access
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gto-solver-ingress
+  namespace: gto-solver
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+spec:
+  tls:
+  - hosts:
+    - api.gto-solver.yourdomain.com
+    - gto-solver.yourdomain.com
+    secretName: gto-solver-tls
+  rules:
+  - host: api.gto-solver.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: master-node
+            port:
+              number: 8000
+  - host: gto-solver.yourdomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+
+---
+# Network Policy for enhanced security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gto-solver-network-policy
+  namespace: gto-solver
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - podSelector: {}
+  egress:
+  - to:
+    - podSelector: {}
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+
+---
+# Pod Disruption Budget for Master Nodes
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: master-node-pdb
+  namespace: gto-solver
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: master-node
+
+---
+# Pod Disruption Budget for Compute Nodes
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: compute-node-pdb
+  namespace: gto-solver
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: compute-node

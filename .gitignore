@@ -1,0 +1,126 @@
+# IDE and Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.coverage
+htmlcov/
+.pytest_cache/
+coverage.xml
+*.cover
+
+# C++
+*.o
+*.obj
+*.exe
+*.out
+*.app
+*.dll
+*.so
+*.dylib
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.log
+
+# Docker
+.dockerignore
+
+# Logs
+logs/*
+*.log
+npm-debug.log*
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Distribution / packaging
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*,cover
+.hypothesis/
+
+# Secrets and keys
+*.pem
+*.key
+*_rsa
+*_dsa
+*_ed25519
+*_ecdsa
+secrets.yaml
+credentials.json
+service-account.json
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Database files
+*.sqlite3
+*.db
+
+# Generated files
+generated/

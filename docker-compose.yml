@@ -1,0 +1,216 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: gto-postgres
+    environment:
+      POSTGRES_DB: gto_solver
+      POSTGRES_USER: gto_user
+      POSTGRES_PASSWORD: gto_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/python/master_node/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - gto-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gto_user -d gto_solver"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # RabbitMQ Message Queue
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: gto-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: gto_user
+      RABBITMQ_DEFAULT_PASS: gto_password
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"  # Management UI
+    networks:
+      - gto-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for session management and caching
+  redis:
+    image: redis:7-alpine
+    container_name: gto-redis
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - gto-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Master Node (API + Orchestration)
+  master-node:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: gto-master-node
+    command: ["python", "-m", "master_node.main"]
+    environment:
+      - DATABASE_URL=postgresql://gto_user:gto_password@postgres:5432/gto_solver
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=gto_user
+      - RABBITMQ_PASSWORD=gto_password
+      - REDIS_URL=redis://redis:6379
+      - NODE_TYPE=master
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - gto-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Compute Node 1
+  compute-node-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: gto-compute-node-1
+    command: ["python", "-m", "compute_node.agent"]
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=gto_user
+      - RABBITMQ_PASSWORD=gto_password
+      - NODE_TYPE=compute
+      - NODE_ID=compute-node-1
+      - MAX_CONCURRENT_TASKS=4
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - gto-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      master-node:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Compute Node 2
+  compute-node-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: gto-compute-node-2
+    command: ["python", "-m", "compute_node.agent"]
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=gto_user
+      - RABBITMQ_PASSWORD=gto_password
+      - NODE_TYPE=compute
+      - NODE_ID=compute-node-2
+      - MAX_CONCURRENT_TASKS=4
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - gto-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      master-node:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: gto-frontend
+    ports:
+      - "80:80"
+    networks:
+      - gto-network
+    depends_on:
+      - master-node
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: gto-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - gto-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: gto-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    networks:
+      - gto-network
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  gto-network:
+    driver: bridge

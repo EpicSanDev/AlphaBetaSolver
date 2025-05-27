@@ -1,0 +1,59 @@
+# Multi-stage Dockerfile for GTO Poker Solver Backend
+# Stage 1: Build C++ components
+FROM ubuntu:22.04 AS cpp-builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    pkg-config \
+    libjsoncpp-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy C++ source code
+WORKDIR /app/backend
+COPY backend/CMakeLists.txt .
+COPY backend/src/ ./src/
+
+# Build C++ solver
+RUN mkdir build && cd build && \
+    cmake .. && \
+    make
+
+# Stage 2: Python runtime
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libjsoncpp25 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user
+RUN useradd --create-home --shell /bin/bash app
+
+# Set working directory
+WORKDIR /app
+
+# Copy built C++ binary from previous stage
+COPY --from=cpp-builder /app/backend/build/src/PokerSolver /app/bin/
+
+# Copy Python requirements and install dependencies
+COPY backend/python/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy Python source code
+COPY backend/python/ ./python/
+
+# Create necessary directories
+RUN mkdir -p logs data && \
+    chown -R app:app /app
+
+# Switch to app user
+USER app
+
+# Set environment variables
+ENV PYTHONPATH=/app/python
+ENV POKER_SOLVER_BIN=/app/bin/PokerSolver
+
+# Default command (can be overridden)
+CMD ["python", "-m", "master_node.main"]
