@@ -9,14 +9,13 @@ from master_node.core.config import settings
 engine = create_async_engine(
     settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"),
     echo=True,
-    future=True
+    future=True,
 )
 
-async_session = sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False
-)
+async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 Base = declarative_base()
+
 
 async def get_db():
     async with async_session() as session:
@@ -25,10 +24,12 @@ async def get_db():
         finally:
             await session.close()
 
+
 async def init_db():
     """Initialize database tables"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
 
 async def close_db():
     """Close database connection"""

@@ -1,6 +1,7 @@
 import os
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
     # API Configuration
     API_V1_STR: str = "/api/v1"
@@ -45,7 +46,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "your-secret-key-change-in-production"
     API_KEYS: str = ""  # Comma-separated list of valid API keys
     ENABLE_AUTH: bool = False  # Set to True in production
-    
+
     # Performance Configuration
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 20
@@ -54,6 +55,7 @@ class Settings(BaseSettings):
     class Config:
         # Use .env.local if it exists, otherwise fall back to .env
         env_file = ".env.local" if os.path.exists(".env.local") else ".env"
-        env_file_encoding = 'utf-8'
+        env_file_encoding = "utf-8"
+
 
 settings = Settings()
