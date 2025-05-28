@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -91,18 +89,18 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  # Compute Node 1
+  # Compute Node 1 - Preflop Tasks
   compute-node-1:
     build:
       context: .
       dockerfile: Dockerfile.backend
     container_name: gto-compute-node-1
-    command: ["python", "-m", "compute_node.agent"]
+    command: ["python", "-m", "compute_node.agent", "--queue-name", "preflop_tasks"]
     environment:
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
@@ -123,13 +121,13 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Compute Node 2
+  # Compute Node 2 - Postflop Tasks
   compute-node-2:
     build:
       context: .
       dockerfile: Dockerfile.backend
     container_name: gto-compute-node-2
-    command: ["python", "-m", "compute_node.agent"]
+    command: ["python", "-m", "compute_node.agent", "--queue-name", "postflop_tasks"]
     environment:
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
@@ -174,7 +172,7 @@ services:
     image: prom/prometheus:latest
     container_name: gto-prometheus
     ports:
-      - "9090:9090"
+      - "9091:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
@@ -193,7 +191,7 @@ services:
     image: grafana/grafana:latest
     container_name: gto-grafana
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:

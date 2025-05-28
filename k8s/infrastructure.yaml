@@ -24,6 +24,13 @@ spec:
       labels:
         app: postgres
     spec:
+      initContainers:
+      - name: remove-lost-found
+        image: busybox:latest
+        command: ["sh", "-c", "rm -rf /var/lib/postgresql/data/lost+found"]
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
       containers:
       - name: postgres
         image: postgres:15-alpine
@@ -102,7 +109,7 @@ spec:
   resources:
     requests:
       storage: 100Gi
-  storageClassName: fast-ssd
+  storageClassName: sbs-default
 
 ---
 # RabbitMQ Message Queue
@@ -191,7 +198,7 @@ spec:
   resources:
     requests:
       storage: 20Gi
-  storageClassName: fast-ssd
+  storageClassName: sbs-default
 
 ---
 # Redis Cache
@@ -264,4 +271,4 @@ spec:
   resources:
     requests:
       storage: 10Gi
-  storageClassName: fast-ssd
+  storageClassName: sbs-default

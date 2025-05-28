@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Vue.js</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .error {
+            color: red;
+            padding: 10px;
+            background: #ffebee;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .success {
+            color: green;
+            padding: 10px;
+            background: #e8f5e8;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="container">
+            <h1>Test de l'interface GTO Poker Solver</h1>
+            
+            <div v-if="loading" style="text-align: center;">
+                Chargement...
+            </div>
+            
+            <div v-if="error" class="error">
+                {{ error }}
+            </div>
+            
+            <div v-if="success" class="success">
+                {{ success }}
+            </div>
+            
+            <div v-if="!loading">
+                <h2>Statut du système</h2>
+                <button @click="testAPI" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    Tester l'API
+                </button>
+                
+                <div v-if="apiStatus" style="margin-top: 20px;">
+                    <h3>Réponse de l'API:</h3>
+                    <pre style="background: #f8f9fa; padding: 15px; border-radius: 5px;">{{ JSON.stringify(apiStatus, null, 2) }}</pre>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <h3>Test d'interactivité Vue.js</h3>
+                    <p>Compteur: {{ counter }}</p>
+                    <button @click="counter++" style="padding: 5px 10px; margin: 5px;">+1</button>
+                    <button @click="counter--" style="padding: 5px 10px; margin: 5px;">-1</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script>
+        const { createApp } = Vue;
+        
+        createApp({
+            data() {
+                return {
+                    loading: false,
+                    error: '',
+                    success: '',
+                    apiStatus: null,
+                    counter: 0
+                }
+            },
+            
+            mounted() {
+                this.success = 'Vue.js fonctionne correctement !';
+                console.log('Vue.js app mounted successfully');
+            },
+            
+            methods: {
+                async testAPI() {
+                    this.loading = true;
+                    this.error = '';
+                    this.apiStatus = null;
+                    
+                    try {
+                        console.log('Testing API...');
+                        const response = await axios.get('http://localhost:8000/api/v1/status');
+                        this.apiStatus = response.data;
+                        this.success = 'API fonctionne correctement !';
+                        console.log('API response:', response.data);
+                    } catch (error) {
+                        console.error('API error:', error);
+                        this.error = `Erreur API: ${error.message}`;
+                        if (error.response) {
+                            this.error += ` (Status: ${error.response.status})`;
+                        }
+                    } finally {
+                        this.loading = false;
+                    }
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

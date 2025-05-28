@@ -41,10 +41,18 @@ class ComputeAgent:
 
     def __init__(
         self,
-        rabbitmq_url: str = "amqp://guest:guest@localhost/",
+        rabbitmq_url: str = None,
         queue_name: str = "computation_tasks",
         result_queue: str = "computation_results",
     ):
+        # Utiliser les variables d'environnement pour RabbitMQ si l'URL n'est pas fournie
+        if rabbitmq_url is None:
+            rabbitmq_host = os.getenv('RABBITMQ_HOST', 'localhost')
+            rabbitmq_port = os.getenv('RABBITMQ_PORT', '5672')
+            rabbitmq_user = os.getenv('RABBITMQ_USER', 'guest')
+            rabbitmq_password = os.getenv('RABBITMQ_PASSWORD', 'guest')
+            rabbitmq_url = f"amqp://{rabbitmq_user}:{rabbitmq_password}@{rabbitmq_host}:{rabbitmq_port}/"
+        
         self.rabbitmq_url = rabbitmq_url
         self.queue_name = queue_name
         self.result_queue = result_queue
@@ -219,12 +227,21 @@ async def main():
     """Point d'entrée principal de l'agent de calcul."""
     import argparse
 
+    # Récupérer la configuration depuis les variables d'environnement
+    rabbitmq_host = os.getenv("RABBITMQ_HOST", "localhost")
+    rabbitmq_port = os.getenv("RABBITMQ_PORT", "5672")
+    rabbitmq_user = os.getenv("RABBITMQ_USER", "guest")
+    rabbitmq_password = os.getenv("RABBITMQ_PASSWORD", "guest")
+    
+    # Construire l'URL RabbitMQ à partir des variables d'environnement
+    default_rabbitmq_url = f"amqp://{rabbitmq_user}:{rabbitmq_password}@{rabbitmq_host}:{rabbitmq_port}/"
+
     parser = argparse.ArgumentParser(
         description="Agent de calcul pour le solveur GTO"
     )
     parser.add_argument(
         "--rabbitmq-url",
-        default="amqp://guest:guest@localhost/",
+        default=default_rabbitmq_url,
         help="URL de connexion RabbitMQ",
     )
     parser.add_argument(
@@ -239,6 +256,12 @@ async def main():
     )
 
     args = parser.parse_args()
+
+    logger.info(f"Configuration de l'agent de calcul :")
+    logger.info(f"  - RabbitMQ URL: {args.rabbitmq_url}")
+    logger.info(f"  - Queue des tâches: {args.queue_name}")
+    logger.info(f"  - Queue des résultats: {args.result_queue}")
+    logger.info(f"  - Node ID: {os.getenv('NODE_ID', 'unknown')}")
 
     agent = ComputeAgent(
         rabbitmq_url=args.rabbitmq_url,

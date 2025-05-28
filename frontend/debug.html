@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GTO Poker Solver - Debug</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            color: #333;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        .tab-buttons {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+        .tab-button {
+            padding: 10px 20px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+        }
+        .tab-button.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-control {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .error { color: red; background: #ffebee; padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .success { color: green; background: #e8f5e8; padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .loading { text-align: center; padding: 20px; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="container">
+            <h1>🃏 GTO Poker Solver - Debug Mode</h1>
+            
+            <!-- Status de l'application -->
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+                <h3>État de l'application</h3>
+                <p><strong>Vue.js:</strong> <span style="color: green;">✓ Chargé</span></p>
+                <p><strong>Axios:</strong> <span style="color: green;">✓ Chargé</span></p>
+                <p><strong>API Backend:</strong> <span :style="{color: apiStatus ? 'green' : 'red'}">{{ apiStatus ? '✓ Connecté' : '✗ Non connecté' }}</span></p>
+                <button @click="testAPI" class="btn btn-primary">Tester l'API</button>
+            </div>
+
+            <!-- Onglets -->
+            <div class="tab-buttons">
+                <button class="tab-button" :class="{active: activeTab === 'test'}" @click="activeTab = 'test'">
+                    Test API
+                </button>
+                <button class="tab-button" :class="{active: activeTab === 'create'}" @click="activeTab = 'create'">
+                    Créer Simulation
+                </button>
+                <button class="tab-button" :class="{active: activeTab === 'monitor'}" @click="activeTab = 'monitor'">
+                    Surveillance
+                </button>
+            </div>
+
+            <!-- Erreurs et succès -->
+            <div v-if="error" class="error">{{ error }}</div>
+            <div v-if="success" class="success">{{ success }}</div>
+
+            <!-- Tab: Test API -->
+            <div v-if="activeTab === 'test'">
+                <h3>Test des endpoints API</h3>
+                
+                <div style="margin: 20px 0;">
+                    <button @click="testEndpoint('/api/v1/status')" class="btn btn-primary">Test Status</button>
+                    <button @click="testEndpoint('/api/v1/queue/status')" class="btn btn-primary">Test Queue</button>
+                    <button @click="testEndpoint('/api/v1/compute-nodes')" class="btn btn-primary">Test Compute Nodes</button>
+                    <button @click="testEndpoint('/api/v1/simulations')" class="btn btn-primary">Test Simulations</button>
+                </div>
+
+                <div v-if="lastApiResponse">
+                    <h4>Dernière réponse API:</h4>
+                    <pre style="background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto;">{{ JSON.stringify(lastApiResponse, null, 2) }}</pre>
+                </div>
+            </div>
+
+            <!-- Tab: Créer Simulation -->
+            <div v-if="activeTab === 'create'">
+                <h3>Créer une simulation (Test simplifié)</h3>
+                
+                <div class="form-group">
+                    <label>Nom de la simulation</label>
+                    <input v-model="testSimulation.name" class="form-control" placeholder="Test simulation">
+                </div>
+                
+                <div class="form-group">
+                    <label>Type</label>
+                    <select v-model="testSimulation.type" class="form-control">
+                        <option value="preflop">Préflop</option>
+                        <option value="postflop">Postflop</option>
+                    </select>
+                </div>
+
+                <button @click="createTestSimulation" class="btn btn-primary" :disabled="isCreating">
+                    {{ isCreating ? 'Création...' : 'Créer simulation test' }}
+                </button>
+            </div>
+
+            <!-- Tab: Surveillance -->
+            <div v-if="activeTab === 'monitor'">
+                <h3>Surveillance des simulations</h3>
+                
+                <button @click="loadSimulations" class="btn btn-primary">Charger simulations</button>
+                
+                <div v-if="simulations.length > 0">
+                    <h4>Simulations trouvées:</h4>
+                    <div v-for="sim in simulations" :key="sim.simulation_id" style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px;">
+                        <p><strong>ID:</strong> {{ sim.simulation_id }}</p>
+                        <p><strong>Statut:</strong> {{ sim.status }}</p>
+                        <p><strong>Créé:</strong> {{ sim.created_at }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+        
+        createApp({
+            data() {
+                return {
+                    activeTab: 'test',
+                    apiStatus: false,
+                    error: '',
+                    success: '',
+                    lastApiResponse: null,
+                    isCreating: false,
+                    simulations: [],
+                    testSimulation: {
+                        name: 'Test Simulation',
+                        type: 'preflop'
+                    }
+                }
+            },
+            
+            async mounted() {
+                console.log('Debug app mounted');
+                this.success = 'Application Vue.js chargée avec succès !';
+                await this.testAPI();
+            },
+            
+            methods: {
+                async testAPI() {
+                    try {
+                        console.log('Testing API connection...');
+                        const response = await axios.get('http://localhost:8000/api/v1/status');
+                        this.apiStatus = true;
+                        this.lastApiResponse = response.data;
+                        this.success = 'API backend accessible !';
+                        this.error = '';
+                        console.log('API test successful:', response.data);
+                    } catch (error) {
+                        this.apiStatus = false;
+                        this.error = `Erreur API: ${error.message}`;
+                        console.error('API test failed:', error);
+                    }
+                },
+                
+                async testEndpoint(endpoint) {
+                    try {
+                        console.log(`Testing endpoint: ${endpoint}`);
+                        const response = await axios.get(`http://localhost:8000${endpoint}`);
+                        this.lastApiResponse = response.data;
+                        this.success = `Endpoint ${endpoint} accessible !`;
+                        this.error = '';
+                        console.log(`Endpoint ${endpoint} response:`, response.data);
+                    } catch (error) {
+                        this.error = `Erreur sur ${endpoint}: ${error.message}`;
+                        console.error(`Endpoint ${endpoint} failed:`, error);
+                    }
+                },
+                
+                async createTestSimulation() {
+                    this.isCreating = true;
+                    this.error = '';
+                    
+                    try {
+                        const requestData = {
+                            simulation_type: this.testSimulation.type,
+                            name: this.testSimulation.name,
+                            description: 'Simulation de test depuis l\'interface debug',
+                            game_config: {
+                                numPlayers: 2,
+                                stackSize: 100,
+                                smallBlind: 0.5,
+                                bigBlind: 1.0
+                            },
+                            solver_config: {
+                                maxIterations: 100,
+                                targetExploitability: 1.0,
+                                batchSize: 50,
+                                useChanceSampling: true,
+                                useDiscounting: true
+                            }
+                        };
+                        
+                        console.log('Creating simulation with data:', requestData);
+                        const response = await axios.post('http://localhost:8000/api/v1/simulations', requestData);
+                        
+                        this.success = `Simulation créée: ${response.data.simulation_id}`;
+                        this.lastApiResponse = response.data;
+                        console.log('Simulation created:', response.data);
+                        
+                    } catch (error) {
+                        this.error = `Erreur création simulation: ${error.message}`;
+                        if (error.response) {
+                            console.error('Error response:', error.response.data);
+                            this.error += ` (${JSON.stringify(error.response.data)})`;
+                        }
+                        console.error('Create simulation failed:', error);
+                    } finally {
+                        this.isCreating = false;
+                    }
+                },
+                
+                async loadSimulations() {
+                    try {
+                        console.log('Loading simulations...');
+                        const response = await axios.get('http://localhost:8000/api/v1/simulations');
+                        this.simulations = response.data;
+                        this.success = `${response.data.length} simulation(s) trouvée(s)`;
+                        console.log('Simulations loaded:', response.data);
+                    } catch (error) {
+                        this.error = `Erreur chargement simulations: ${error.message}`;
+                        console.error('Load simulations failed:', error);
+                    }
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

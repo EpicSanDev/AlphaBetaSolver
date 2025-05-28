@@ -3,15 +3,19 @@ import logging
 import signal
 import sys
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from prometheus_client import start_http_server
+import os
 
 from master_node.core.config import settings
 from master_node.db import init_db, close_db
 from master_node.services.task_queue import TaskQueue
 from master_node.services.simulation_manager import SimulationManager
+from master_node.services.compute_node_manager import get_compute_node_manager
 from master_node.api import endpoints
+from master_node.api.websocket import websocket_endpoint
 
 # Configure logging
 logging.basicConfig(
@@ -22,12 +26,13 @@ logger = logging.getLogger(__name__)
 # Global services
 task_queue = None
 simulation_manager = None
+compute_node_manager = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    global task_queue, simulation_manager
+    global task_queue, simulation_manager, compute_node_manager
 
     logger.info("Starting GTO Poker Solver Master Node...")
 
@@ -48,6 +53,10 @@ async def lifespan(app: FastAPI):
         await task_queue.connect()
         logger.info("Task queue connected")
 
+        # Initialize compute node manager
+        compute_node_manager = get_compute_node_manager()
+        logger.info("Compute node manager initialized")
+
         # Initialize simulation manager
         simulation_manager = SimulationManager(
             task_queue,
@@ -55,6 +64,11 @@ async def lifespan(app: FastAPI):
         )
         await simulation_manager.start()
         logger.info("Simulation manager started")
+
+        # Make services available to endpoints
+        app.state.compute_node_manager = compute_node_manager
+        app.state.simulation_manager = simulation_manager
+        app.state.task_queue = task_queue
 
         # Start background tasks
         asyncio.create_task(heartbeat_task())
@@ -72,6 +86,9 @@ async def lifespan(app: FastAPI):
 
         if simulation_manager:
             await simulation_manager.stop()
+
+        if compute_node_manager:
+            await compute_node_manager.cleanup()
 
         if task_queue:
             await task_queue.close()
@@ -112,7 +129,45 @@ async def root():
     }
 
 
+@app.get("/download/compute_client.py")
+async def download_compute_client():
+    """Serve the compute client file for download"""
+    client_path = "/app/compute_client.py"  # Path in Docker container
+    if os.path.exists(client_path):
+        return FileResponse(
+            path=client_path,
+            filename="compute_client.py",
+            media_type="text/x-python"
+        )
+    else:
+        return {"error": "Compute client file not found"}
+
+
 app.include_router(endpoints.router, prefix=settings.API_V1_STR)
+
+# WebSocket endpoint for real-time monitoring (no authentication required)
+@app.websocket("/ws")
+async def websocket_monitoring(websocket: WebSocket):
+    """WebSocket endpoint for real-time monitoring. No authentication required."""
+    try:
+        await websocket.accept()
+        await websocket.send_text("Connection established")
+        
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Echo: {data}")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        await websocket.close()
+
+
+# Simple WebSocket test endpoint
+@app.websocket("/ws-test")
+async def websocket_test(websocket: WebSocket):
+    """Simple WebSocket test endpoint"""
+    await websocket.accept()
+    await websocket.send_text("Hello WebSocket!")
+    await websocket.close()
 
 
 async def heartbeat_task():
@@ -133,7 +188,8 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 
-if __name__ == "__main__":
+def main():
+    """Main function to start the server"""
     import uvicorn
 
     # Register signal handlers
@@ -142,9 +198,13 @@ if __name__ == "__main__":
 
     logger.info(f"Starting server on {settings.API_HOST}:{settings.API_PORT}")
     uvicorn.run(
-        "master_node.main:app",
+        app,
         host=settings.API_HOST,
         port=settings.API_PORT,
         reload=False,
         workers=1,
     )
+
+
+if __name__ == "__main__":
+    main()

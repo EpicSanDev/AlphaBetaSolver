@@ -1,7 +1,10 @@
 // Frontend API Gateway
 // Ce fichier centralise toutes les requêtes API du frontend
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+// Détecter l'environnement et configurer l'URL de base
+const API_BASE_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:8000/api/v1'  // Développement local
+    : '/api/v1';  // Production avec proxy nginx
 
 // Client axios configuré
 const apiClient = axios.create({

@@ -5,10 +5,114 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GTO Poker Solver</title>
     <link rel="stylesheet" href="styles.css" type="text/css">
-    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="api-gateway.js"></script>
-    <script src="realtime-monitor.js"></script>
+    <script src="strategy-visualizer.js"></script>
+    <!-- Style interne de secours au cas où le fichier CSS ne se chargerait pas -->
+    <style>
+        /* Styles essentiels pour l'application */
+        :root {
+            --primary-color: #667eea;
+            --primary-dark: #5a6fd8;
+            --secondary-color: #764ba2;
+            --success-color: #27ae60;
+            --warning-color: #f39c12;
+            --danger-color: #e74c3c;
+            --light-color: #f5f7fa;
+            --dark-color: #2c3e50;
+            --gray-color: #95a5a6;
+            --border-radius: 10px;
+            --box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            --transition: all 0.3s ease;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            min-height: 100vh;
+            color: var(--dark-color);
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: var(--border-radius);
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: var(--box-shadow);
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: var(--transition);
+            display: inline-block;
+            text-align: center;
+        }
+        
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .nav-tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #eee;
+        }
+        
+        .nav-tab {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            color: var(--gray-color);
+            border-bottom: 3px solid transparent;
+        }
+        
+        .nav-tab.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+        }
+        
+        .simulation-item {
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+    </style>
 </head>
 <body>
     <div id="app">
@@ -26,16 +130,12 @@
                     <button class="nav-tab" :class="{active: activeTab === 'monitor'}" @click="activeTab = 'monitor'">
                         Surveillance
                     </button>
-                    <button class="nav-tab" :class="{active: activeTab === 'cluster'}" @click="activeTab = 'cluster'">
-                        Cluster
+                    <button class="nav-tab" :class="{active: activeTab === 'results'}" @click="activeTab = 'results'">
+                        Résultats
                     </button>
                     <button class="nav-tab" :class="{active: activeTab === 'status'}" @click="activeTab = 'status'">
                         Système
                     </button>
-                    <div class="connection-status">
-                        <span class="status-indicator" :class="{connected: isRealtimeConnected, disconnected: !isRealtimeConnected}"></span>
-                        <span class="status-text">{{ isRealtimeConnected ? 'Temps réel' : 'Hors ligne' }}</span>
-                    </div>
                 </div>
                 
                 <!-- Tab: Nouvelle Simulation -->
@@ -168,139 +268,59 @@
                     </div>
                 </div>
                 
-                <!-- Tab: Cluster -->
-                <div v-if="activeTab === 'cluster'">
-                    <h3>⚡ Cluster de Calcul Distribué</h3>
+                <!-- Tab: Résultats -->
+                <div v-if="activeTab === 'results'">
+                    <h3>Résultats des simulations</h3>
                     
-                    <div class="cluster-overview">
-                        <div class="cluster-stats" v-if="clusterStats">
-                            <div class="stat-item">
-                                <span class="stat-value">{{ clusterStats.active_nodes }}</span>
-                                <span class="stat-label">Nœuds Actifs</span>
+                    <div v-if="loadingResults" class="loading">
+                        Chargement des résultats...
+                    </div>
+                    
+                    <div v-for="simulation in completedSimulations" :key="simulation.simulation_id" class="simulation-item">
+                        <h4>{{ simulation.name || simulation.simulation_id }}</h4>
+                        <span class="status-badge status-completed">{{ simulation.status }}</span>
+                        
+                        <div v-if="simulationResults[simulation.simulation_id]" style="margin-top: 15px;">
+                            <div class="grid">
+                                <div>
+                                    <h5>Métriques</h5>
+                                    <p><strong>Exploitabilité finale:</strong> {{ simulationResults[simulation.simulation_id].final_exploitability.toFixed(4) }}</p>
+                                    <p><strong>Itérations:</strong> {{ simulationResults[simulation.simulation_id].iterations_completed }}</p>
+                                    <p><strong>Temps de convergence:</strong> {{ formatTime(simulationResults[simulation.simulation_id].convergence_time) }}</p>
+                                </div>
+                                <div>
+                                    <h5>Actions</h5>
+                                    <button @click="downloadStrategy(simulation.simulation_id)" class="btn btn-primary" style="margin-right: 10px;">
+                                        Télécharger stratégie
+                                    </button>
+                                    <button @click="toggleStrategyVisualizer(simulation.simulation_id)" class="btn" :class="{'btn-primary': showStrategyVisualizer && selectedSimulationForVisualization === simulation.simulation_id}">
+                                        {{ (showStrategyVisualizer && selectedSimulationForVisualization === simulation.simulation_id) ? 'Masquer visualisation' : 'Visualiser stratégie' }}
+                                    </button>
+                                </div>
                             </div>
-                            <div class="stat-item">
-                                <span class="stat-value">{{ clusterStats.current_usage }}/{{ clusterStats.total_capacity }}</span>
-                                <span class="stat-label">Utilisation</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-value">{{ clusterStats.utilization_percentage.toFixed(1) }}%</span>
-                                <span class="stat-label">Charge</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-value">{{ clusterStats.pending_tasks }}</span>
-                                <span class="stat-label">Tâches en Attente</span>
+                            
+                            <!-- Visualiseur de stratégie -->
+                            <div v-if="showStrategyVisualizer && selectedSimulationForVisualization === simulation.simulation_id">
+                                <strategy-visualizer 
+                                    :strategy="simulationResults[simulation.simulation_id].final_strategy"
+                                    :player="0"
+                                ></strategy-visualizer>
                             </div>
                         </div>
                         
-                        <div class="cluster-actions">
-                            <button @click="showClientInstructions = !showClientInstructions" class="btn btn-primary">
-                                {{ showClientInstructions ? 'Masquer' : 'Ajouter un Nœud' }}
-                            </button>
-                            <button @click="refreshClusterData" class="btn btn-secondary">
-                                Actualiser
-                            </button>
-                        </div>
+                        <button v-else @click="loadResults(simulation.simulation_id)" class="btn btn-primary">
+                            Charger résultats
+                        </button>
                     </div>
                     
-                    <div v-if="showClientInstructions" class="client-instructions">
-                        <h4>🚀 Comment ajouter votre ordinateur au cluster</h4>
-                        <div class="instructions-content">
-                            <p>Pour contribuer à la puissance de calcul, téléchargez et exécutez le client sur votre ordinateur :</p>
-                            
-                            <div class="instruction-step">
-                                <strong>1. Télécharger le client :</strong>
-                                <div class="code-block">
-                                    <code>curl -O http://{{ currentHost }}/download/compute_client.py</code>
-                                    <button @click="copyToClipboard('curl -O http://' + currentHost + '/download/compute_client.py')" class="copy-btn">
-                                        Copier
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <div class="instruction-step">
-                                <strong>2. Installer les dépendances :</strong>
-                                <div class="code-block">
-                                    <code>python3 compute_client.py --install</code>
-                                    <button @click="copyToClipboard('python3 compute_client.py --install')" class="copy-btn">
-                                        Copier
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <div class="instruction-step">
-                                <strong>3. Démarrer le client :</strong>
-                                <div class="code-block">
-                                    <code>python3 compute_client.py --master-url http://{{ currentHost }}</code>
-                                    <button @click="copyToClipboard('python3 compute_client.py --master-url http://' + currentHost)" class="copy-btn">
-                                        Copier
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <div class="options">
-                                <h5>Options avancées :</h5>
-                                <ul>
-                                    <li><code>--max-tasks N</code> : Nombre maximum de tâches simultanées</li>
-                                    <li><code>--node-id MON_ID</code> : ID personnalisé pour ce nœud</li>
-                                    <li><code>--verbose</code> : Mode verbeux pour le debug</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="compute-nodes-grid">
-                        <div v-for="node in computeNodes" :key="node.node_id" class="compute-node-card">
-                            <div class="node-header">
-                                <h5>{{ node.node_id }}</h5>
-                                <span class="status-badge" :class="'status-' + node.status">{{ node.status }}</span>
-                            </div>
-                            
-                            <div class="node-info">
-                                <div class="node-specs">
-                                    <span><strong>Platform:</strong> {{ node.platform }} {{ node.architecture }}</span>
-                                    <span><strong>CPUs:</strong> {{ node.cpu_count }}</span>
-                                    <span><strong>Mémoire:</strong> {{ formatBytes(node.memory_total) }}</span>
-                                </div>
-                                
-                                <div class="node-metrics">
-                                    <div class="metric-row">
-                                        <span>Tâches: {{ node.current_tasks }}/{{ node.max_concurrent_tasks }}</span>
-                                        <div class="progress-bar">
-                                            <div class="progress-fill" :style="{width: (node.current_tasks / node.max_concurrent_tasks * 100) + '%'}"></div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="metric-row">
-                                        <span>CPU: {{ node.cpu_usage ? node.cpu_usage.toFixed(1) : 0 }}%</span>
-                                        <div class="progress-bar">
-                                            <div class="progress-fill cpu" :style="{width: (node.cpu_usage || 0) + '%'}"></div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="metric-row">
-                                        <span>RAM: {{ node.memory_usage ? node.memory_usage.toFixed(1) : 0 }}%</span>
-                                        <div class="progress-bar">
-                                            <div class="progress-fill memory" :style="{width: (node.memory_usage || 0) + '%'}"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="node-stats">
-                                    <small>
-                                        Complétées: {{ node.total_tasks_completed || 0 }} | 
-                                        Échouées: {{ node.total_tasks_failed || 0 }} |
-                                        Dernière activité: {{ formatLastSeen(node.last_heartbeat) }}
-                                    </small>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div v-if="computeNodes.length === 0" class="no-nodes">
-                            <p>🔌 Aucun nœud de calcul connecté</p>
-                            <p>Ajoutez votre premier nœud en suivant les instructions ci-dessus.</p>
-                        </div>
+                    <div v-if="completedSimulations.length === 0 && !loadingResults">
+                        <p style="text-align: center; color: #666; padding: 40px;">
+                            Aucune simulation terminée
+                        </p>
                     </div>
                 </div>
+                
+                <!-- Tab: Système -->
                 <div v-if="activeTab === 'status'">
                     <h3>Statut du système</h3>
                     
@@ -348,6 +368,12 @@
         const { createApp } = Vue;
         
         createApp({
+            components: {
+                'strategy-visualizer': window.StrategyVisualizer || {
+                    props: ['strategy', 'player'],
+                    template: '<div>Visualiseur de stratégie non disponible</div>'
+                }
+            },
             data() {
                 return {
                     activeTab: 'create',
@@ -380,36 +406,27 @@
                     simulationStatuses: {},
                     loadingSimulations: false,
                     
+                    // Résultats
+                    completedSimulations: [],
+                    simulationResults: {},
+                    loadingResults: false,
+                    
+                    // Visualisation de stratégie
+                    selectedSimulationForVisualization: null,
+                    showStrategyVisualizer: false,
+                    
                     // Système
                     systemStatus: null,
                     queueStatus: null,
                     computeNodes: [],
-                    clusterStats: null,
-                    
-                    // Monitoring temps réel
-                    realtimeMonitor: null,
-                    isRealtimeConnected: false,
-                    
-                    // Cluster
-                    showClientInstructions: false,
                     
                     // Polling
                     statusInterval: null
                 }
             },
             
-            computed: {
-                currentHost() {
-                    return window.location.host;
-                }
-            },
-            
             async mounted() {
                 console.log('Vue app mounting...');
-                
-                // Initialiser le monitoring temps réel
-                this.initRealtimeMonitoring();
-                
                 try {
                     await this.loadSystemStatus();
                     console.log('System status loaded');
@@ -432,88 +449,9 @@
                 if (this.statusInterval) {
                     clearInterval(this.statusInterval);
                 }
-                
-                if (this.realtimeMonitor) {
-                    this.realtimeMonitor.disconnect();
-                }
             },
             
             methods: {
-                // Monitoring temps réel
-                initRealtimeMonitoring() {
-                    this.realtimeMonitor = new RealtimeMonitor();
-                    
-                    // Écouter les événements de connexion
-                    this.realtimeMonitor.on('connected', (data) => {
-                        this.isRealtimeConnected = data.connected;
-                    });
-                    
-                    // Écouter les mises à jour des simulations
-                    this.realtimeMonitor.on('simulation_update', (data) => {
-                        this.handleSimulationUpdate(data);
-                    });
-                    
-                    // Écouter les mises à jour système
-                    this.realtimeMonitor.on('system_update', (data) => {
-                        this.handleSystemUpdate(data);
-                    });
-                    
-                    // Écouter les mises à jour des nœuds de calcul
-                    this.realtimeMonitor.on('compute_node_update', (data) => {
-                        this.handleComputeNodeUpdate(data);
-                    });
-                },
-                
-                handleSimulationUpdate(data) {
-                    const { simulation_id, status, progress_percentage, iterations_completed, 
-                           current_exploitability, estimated_time_remaining } = data;
-                    
-                    // Mettre à jour le statut de simulation
-                    this.simulationStatuses[simulation_id] = {
-                        ...this.simulationStatuses[simulation_id],
-                        status,
-                        progress_percentage,
-                        iterations_completed,
-                        current_exploitability,
-                        estimated_time_remaining
-                    };
-                    
-                    // Si la simulation est terminée, recharger la liste
-                    if (status === 'completed' || status === 'failed') {
-                        this.loadSimulations();
-                    }
-                    
-                    console.log(`Simulation ${simulation_id} mise à jour:`, data);
-                },
-                
-                handleSystemUpdate(data) {
-                    if (data.queue_status) {
-                        this.queueStatus = { ...this.queueStatus, ...data.queue_status };
-                    }
-                    
-                    if (data.compute_nodes) {
-                        this.computeNodes = data.compute_nodes;
-                    }
-                    
-                    console.log('Système mis à jour:', data);
-                },
-                
-                handleComputeNodeUpdate(data) {
-                    if (data.event === 'node_connected') {
-                        // Ajouter le nouveau nœud s'il n'existe pas
-                        const existingIndex = this.computeNodes.findIndex(n => n.node_id === data.node.node_id);
-                        if (existingIndex === -1) {
-                            this.computeNodes.push(data.node);
-                        }
-                        this.refreshClusterData();
-                    } else if (data.event === 'node_disconnected') {
-                        // Supprimer le nœud déconnecté
-                        this.computeNodes = this.computeNodes.filter(n => n.node_id !== data.node_id);
-                        this.refreshClusterData();
-                    }
-                    
-                    console.log('Nœud de calcul mis à jour:', data);
-                },
                 async createSimulation() {
                     this.isCreating = true;
                     this.createError = '';
@@ -532,11 +470,6 @@
                         
                         // Recharger les simulations
                         await this.loadSimulations();
-                        
-                        // S'abonner aux mises à jour de la nouvelle simulation
-                        if (this.realtimeMonitor) {
-                            this.realtimeMonitor.subscribeToSimulation(response.data.simulation_id);
-                        }
                         
                         // Basculer vers l'onglet surveillance
                         this.activeTab = 'monitor';
@@ -557,14 +490,13 @@
                         const pendingResponse = await ApiGateway.listSimulations({status: 'pending'});
                         this.activeSimulations = [...activeResponse.data, ...pendingResponse.data];
                         
+                        // Charger les simulations terminées
+                        const completedResponse = await ApiGateway.listSimulations({status: 'completed'});
+                        this.completedSimulations = completedResponse.data;
+                        
                         // Charger le statut détaillé des simulations actives
                         for (const sim of this.activeSimulations) {
                             await this.loadSimulationStatus(sim.simulation_id);
-                            
-                            // S'abonner aux mises à jour temps réel
-                            if (this.realtimeMonitor) {
-                                this.realtimeMonitor.subscribeToSimulation(sim.simulation_id);
-                            }
                         }
                         
                     } catch (error) {
@@ -596,6 +528,31 @@
                     }
                 },
                 
+                async loadResults(simulationId) {
+                    this.loadingResults = true;
+                    
+                    try {
+                        const response = await ApiGateway.getSimulationResults(simulationId);
+                        this.simulationResults[simulationId] = response.data;
+                        
+                        // Préparer pour la visualisation
+                        this.selectedSimulationForVisualization = simulationId;
+                    } catch (error) {
+                        alert('Erreur lors du chargement des résultats');
+                    } finally {
+                        this.loadingResults = false;
+                    }
+                },
+                
+                async downloadStrategy(simulationId) {
+                    try {
+                        const results = this.simulationResults[simulationId];
+                        ApiGateway.exportStrategyAsJson(results.final_strategy);
+                    } catch (error) {
+                        alert('Erreur lors du téléchargement de la stratégie');
+                    }
+                },
+                
                 async loadSystemStatus() {
                     try {
                         const [statusResponse, queueResponse, nodesResponse] = await Promise.all([
@@ -606,72 +563,11 @@
                         
                         this.systemStatus = statusResponse.data;
                         this.queueStatus = queueResponse.data;
-                        this.computeNodes = nodesResponse.data.compute_nodes || [];
-                        this.clusterStats = nodesResponse.data.cluster_stats;
+                        this.computeNodes = nodesResponse.data.compute_nodes;
                         
                     } catch (error) {
                         console.error('Erreur lors du chargement du statut système:', error);
                     }
-                },
-                
-                async refreshClusterData() {
-                    try {
-                        const nodesResponse = await ApiGateway.getComputeNodes();
-                        this.computeNodes = nodesResponse.data.compute_nodes || [];
-                        this.clusterStats = nodesResponse.data.cluster_stats;
-                    } catch (error) {
-                        console.error('Erreur lors du rafraîchissement du cluster:', error);
-                    }
-                },
-                
-                // Utilitaires pour l'affichage
-                formatBytes(bytes) {
-                    return MonitoringUtils.formatBytes(bytes);
-                },
-                
-                formatLastSeen(dateString) {
-                    if (!dateString) return 'Jamais';
-                    
-                    const date = new Date(dateString);
-                    const now = new Date();
-                    const diffMs = now - date;
-                    const diffMins = Math.floor(diffMs / 60000);
-                    
-                    if (diffMins < 1) return 'À l\'instant';
-                    if (diffMins < 60) return `Il y a ${diffMins}min`;
-                    
-                    const diffHours = Math.floor(diffMins / 60);
-                    if (diffHours < 24) return `Il y a ${diffHours}h`;
-                    
-                    const diffDays = Math.floor(diffHours / 24);
-                    return `Il y a ${diffDays}j`;
-                },
-                
-                copyToClipboard(text) {
-                    navigator.clipboard.writeText(text).then(() => {
-                        // Afficher une notification de succès
-                        const notification = document.createElement('div');
-                        notification.textContent = 'Copié dans le presse-papiers !';
-                        notification.style.cssText = `
-                            position: fixed;
-                            top: 20px;
-                            right: 20px;
-                            background: #28a745;
-                            color: white;
-                            padding: 10px 15px;
-                            border-radius: 5px;
-                            z-index: 1000;
-                            font-family: Arial, sans-serif;
-                        `;
-                        document.body.appendChild(notification);
-                        
-                        setTimeout(() => {
-                            document.body.removeChild(notification);
-                        }, 2000);
-                    }).catch(err => {
-                        console.error('Erreur lors de la copie:', err);
-                        alert('Erreur lors de la copie dans le presse-papiers');
-                    });
                 },
                 
                 startStatusPolling() {
@@ -700,6 +596,15 @@
                         return `${Math.floor(seconds / 60)}min ${Math.round(seconds % 60)}s`;
                     } else {
                         return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}min`;
+                    }
+                },
+                
+                toggleStrategyVisualizer(simulationId) {
+                    if (this.selectedSimulationForVisualization === simulationId && this.showStrategyVisualizer) {
+                        this.showStrategyVisualizer = false;
+                    } else {
+                        this.selectedSimulationForVisualization = simulationId;
+                        this.showStrategyVisualizer = true;
                     }
                 }
             }

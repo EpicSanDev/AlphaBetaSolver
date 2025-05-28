@@ -8,7 +8,6 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
     <script src="api-gateway.js"></script>
-    <script src="realtime-monitor.js"></script>
 </head>
 <body>
     <div id="app">
@@ -26,16 +25,9 @@
                     <button class="nav-tab" :class="{active: activeTab === 'monitor'}" @click="activeTab = 'monitor'">
                         Surveillance
                     </button>
-                    <button class="nav-tab" :class="{active: activeTab === 'cluster'}" @click="activeTab = 'cluster'">
-                        Cluster
-                    </button>
                     <button class="nav-tab" :class="{active: activeTab === 'status'}" @click="activeTab = 'status'">
                         Système
                     </button>
-                    <div class="connection-status">
-                        <span class="status-indicator" :class="{connected: isRealtimeConnected, disconnected: !isRealtimeConnected}"></span>
-                        <span class="status-text">{{ isRealtimeConnected ? 'Temps réel' : 'Hors ligne' }}</span>
-                    </div>
                 </div>
                 
                 <!-- Tab: Nouvelle Simulation -->
@@ -168,139 +160,7 @@
                     </div>
                 </div>
                 
-                <!-- Tab: Cluster -->
-                <div v-if="activeTab === 'cluster'">
-                    <h3>⚡ Cluster de Calcul Distribué</h3>
-                    
-                    <div class="cluster-overview">
-                        <div class="cluster-stats" v-if="clusterStats">
-                            <div class="stat-item">
-                                <span class="stat-value">{{ clusterStats.active_nodes }}</span>
-                                <span class="stat-label">Nœuds Actifs</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-value">{{ clusterStats.current_usage }}/{{ clusterStats.total_capacity }}</span>
-                                <span class="stat-label">Utilisation</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-value">{{ clusterStats.utilization_percentage.toFixed(1) }}%</span>
-                                <span class="stat-label">Charge</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-value">{{ clusterStats.pending_tasks }}</span>
-                                <span class="stat-label">Tâches en Attente</span>
-                            </div>
-                        </div>
-                        
-                        <div class="cluster-actions">
-                            <button @click="showClientInstructions = !showClientInstructions" class="btn btn-primary">
-                                {{ showClientInstructions ? 'Masquer' : 'Ajouter un Nœud' }}
-                            </button>
-                            <button @click="refreshClusterData" class="btn btn-secondary">
-                                Actualiser
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div v-if="showClientInstructions" class="client-instructions">
-                        <h4>🚀 Comment ajouter votre ordinateur au cluster</h4>
-                        <div class="instructions-content">
-                            <p>Pour contribuer à la puissance de calcul, téléchargez et exécutez le client sur votre ordinateur :</p>
-                            
-                            <div class="instruction-step">
-                                <strong>1. Télécharger le client :</strong>
-                                <div class="code-block">
-                                    <code>curl -O http://{{ currentHost }}/download/compute_client.py</code>
-                                    <button @click="copyToClipboard('curl -O http://' + currentHost + '/download/compute_client.py')" class="copy-btn">
-                                        Copier
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <div class="instruction-step">
-                                <strong>2. Installer les dépendances :</strong>
-                                <div class="code-block">
-                                    <code>python3 compute_client.py --install</code>
-                                    <button @click="copyToClipboard('python3 compute_client.py --install')" class="copy-btn">
-                                        Copier
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <div class="instruction-step">
-                                <strong>3. Démarrer le client :</strong>
-                                <div class="code-block">
-                                    <code>python3 compute_client.py --master-url http://{{ currentHost }}</code>
-                                    <button @click="copyToClipboard('python3 compute_client.py --master-url http://' + currentHost)" class="copy-btn">
-                                        Copier
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <div class="options">
-                                <h5>Options avancées :</h5>
-                                <ul>
-                                    <li><code>--max-tasks N</code> : Nombre maximum de tâches simultanées</li>
-                                    <li><code>--node-id MON_ID</code> : ID personnalisé pour ce nœud</li>
-                                    <li><code>--verbose</code> : Mode verbeux pour le debug</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="compute-nodes-grid">
-                        <div v-for="node in computeNodes" :key="node.node_id" class="compute-node-card">
-                            <div class="node-header">
-                                <h5>{{ node.node_id }}</h5>
-                                <span class="status-badge" :class="'status-' + node.status">{{ node.status }}</span>
-                            </div>
-                            
-                            <div class="node-info">
-                                <div class="node-specs">
-                                    <span><strong>Platform:</strong> {{ node.platform }} {{ node.architecture }}</span>
-                                    <span><strong>CPUs:</strong> {{ node.cpu_count }}</span>
-                                    <span><strong>Mémoire:</strong> {{ formatBytes(node.memory_total) }}</span>
-                                </div>
-                                
-                                <div class="node-metrics">
-                                    <div class="metric-row">
-                                        <span>Tâches: {{ node.current_tasks }}/{{ node.max_concurrent_tasks }}</span>
-                                        <div class="progress-bar">
-                                            <div class="progress-fill" :style="{width: (node.current_tasks / node.max_concurrent_tasks * 100) + '%'}"></div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="metric-row">
-                                        <span>CPU: {{ node.cpu_usage ? node.cpu_usage.toFixed(1) : 0 }}%</span>
-                                        <div class="progress-bar">
-                                            <div class="progress-fill cpu" :style="{width: (node.cpu_usage || 0) + '%'}"></div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="metric-row">
-                                        <span>RAM: {{ node.memory_usage ? node.memory_usage.toFixed(1) : 0 }}%</span>
-                                        <div class="progress-bar">
-                                            <div class="progress-fill memory" :style="{width: (node.memory_usage || 0) + '%'}"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="node-stats">
-                                    <small>
-                                        Complétées: {{ node.total_tasks_completed || 0 }} | 
-                                        Échouées: {{ node.total_tasks_failed || 0 }} |
-                                        Dernière activité: {{ formatLastSeen(node.last_heartbeat) }}
-                                    </small>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div v-if="computeNodes.length === 0" class="no-nodes">
-                            <p>🔌 Aucun nœud de calcul connecté</p>
-                            <p>Ajoutez votre premier nœud en suivant les instructions ci-dessus.</p>
-                        </div>
-                    </div>
-                </div>
+                <!-- Tab: Système -->
                 <div v-if="activeTab === 'status'">
                     <h3>Statut du système</h3>
                     
@@ -384,32 +244,14 @@
                     systemStatus: null,
                     queueStatus: null,
                     computeNodes: [],
-                    clusterStats: null,
-                    
-                    // Monitoring temps réel
-                    realtimeMonitor: null,
-                    isRealtimeConnected: false,
-                    
-                    // Cluster
-                    showClientInstructions: false,
                     
                     // Polling
                     statusInterval: null
                 }
             },
             
-            computed: {
-                currentHost() {
-                    return window.location.host;
-                }
-            },
-            
             async mounted() {
                 console.log('Vue app mounting...');
-                
-                // Initialiser le monitoring temps réel
-                this.initRealtimeMonitoring();
-                
                 try {
                     await this.loadSystemStatus();
                     console.log('System status loaded');
@@ -432,88 +274,9 @@
                 if (this.statusInterval) {
                     clearInterval(this.statusInterval);
                 }
-                
-                if (this.realtimeMonitor) {
-                    this.realtimeMonitor.disconnect();
-                }
             },
             
             methods: {
-                // Monitoring temps réel
-                initRealtimeMonitoring() {
-                    this.realtimeMonitor = new RealtimeMonitor();
-                    
-                    // Écouter les événements de connexion
-                    this.realtimeMonitor.on('connected', (data) => {
-                        this.isRealtimeConnected = data.connected;
-                    });
-                    
-                    // Écouter les mises à jour des simulations
-                    this.realtimeMonitor.on('simulation_update', (data) => {
-                        this.handleSimulationUpdate(data);
-                    });
-                    
-                    // Écouter les mises à jour système
-                    this.realtimeMonitor.on('system_update', (data) => {
-                        this.handleSystemUpdate(data);
-                    });
-                    
-                    // Écouter les mises à jour des nœuds de calcul
-                    this.realtimeMonitor.on('compute_node_update', (data) => {
-                        this.handleComputeNodeUpdate(data);
-                    });
-                },
-                
-                handleSimulationUpdate(data) {
-                    const { simulation_id, status, progress_percentage, iterations_completed, 
-                           current_exploitability, estimated_time_remaining } = data;
-                    
-                    // Mettre à jour le statut de simulation
-                    this.simulationStatuses[simulation_id] = {
-                        ...this.simulationStatuses[simulation_id],
-                        status,
-                        progress_percentage,
-                        iterations_completed,
-                        current_exploitability,
-                        estimated_time_remaining
-                    };
-                    
-                    // Si la simulation est terminée, recharger la liste
-                    if (status === 'completed' || status === 'failed') {
-                        this.loadSimulations();
-                    }
-                    
-                    console.log(`Simulation ${simulation_id} mise à jour:`, data);
-                },
-                
-                handleSystemUpdate(data) {
-                    if (data.queue_status) {
-                        this.queueStatus = { ...this.queueStatus, ...data.queue_status };
-                    }
-                    
-                    if (data.compute_nodes) {
-                        this.computeNodes = data.compute_nodes;
-                    }
-                    
-                    console.log('Système mis à jour:', data);
-                },
-                
-                handleComputeNodeUpdate(data) {
-                    if (data.event === 'node_connected') {
-                        // Ajouter le nouveau nœud s'il n'existe pas
-                        const existingIndex = this.computeNodes.findIndex(n => n.node_id === data.node.node_id);
-                        if (existingIndex === -1) {
-                            this.computeNodes.push(data.node);
-                        }
-                        this.refreshClusterData();
-                    } else if (data.event === 'node_disconnected') {
-                        // Supprimer le nœud déconnecté
-                        this.computeNodes = this.computeNodes.filter(n => n.node_id !== data.node_id);
-                        this.refreshClusterData();
-                    }
-                    
-                    console.log('Nœud de calcul mis à jour:', data);
-                },
                 async createSimulation() {
                     this.isCreating = true;
                     this.createError = '';
@@ -532,11 +295,6 @@
                         
                         // Recharger les simulations
                         await this.loadSimulations();
-                        
-                        // S'abonner aux mises à jour de la nouvelle simulation
-                        if (this.realtimeMonitor) {
-                            this.realtimeMonitor.subscribeToSimulation(response.data.simulation_id);
-                        }
                         
                         // Basculer vers l'onglet surveillance
                         this.activeTab = 'monitor';
@@ -560,11 +318,6 @@
                         // Charger le statut détaillé des simulations actives
                         for (const sim of this.activeSimulations) {
                             await this.loadSimulationStatus(sim.simulation_id);
-                            
-                            // S'abonner aux mises à jour temps réel
-                            if (this.realtimeMonitor) {
-                                this.realtimeMonitor.subscribeToSimulation(sim.simulation_id);
-                            }
                         }
                         
                     } catch (error) {
@@ -606,72 +359,11 @@
                         
                         this.systemStatus = statusResponse.data;
                         this.queueStatus = queueResponse.data;
-                        this.computeNodes = nodesResponse.data.compute_nodes || [];
-                        this.clusterStats = nodesResponse.data.cluster_stats;
+                        this.computeNodes = nodesResponse.data.compute_nodes;
                         
                     } catch (error) {
                         console.error('Erreur lors du chargement du statut système:', error);
                     }
-                },
-                
-                async refreshClusterData() {
-                    try {
-                        const nodesResponse = await ApiGateway.getComputeNodes();
-                        this.computeNodes = nodesResponse.data.compute_nodes || [];
-                        this.clusterStats = nodesResponse.data.cluster_stats;
-                    } catch (error) {
-                        console.error('Erreur lors du rafraîchissement du cluster:', error);
-                    }
-                },
-                
-                // Utilitaires pour l'affichage
-                formatBytes(bytes) {
-                    return MonitoringUtils.formatBytes(bytes);
-                },
-                
-                formatLastSeen(dateString) {
-                    if (!dateString) return 'Jamais';
-                    
-                    const date = new Date(dateString);
-                    const now = new Date();
-                    const diffMs = now - date;
-                    const diffMins = Math.floor(diffMs / 60000);
-                    
-                    if (diffMins < 1) return 'À l\'instant';
-                    if (diffMins < 60) return `Il y a ${diffMins}min`;
-                    
-                    const diffHours = Math.floor(diffMins / 60);
-                    if (diffHours < 24) return `Il y a ${diffHours}h`;
-                    
-                    const diffDays = Math.floor(diffHours / 24);
-                    return `Il y a ${diffDays}j`;
-                },
-                
-                copyToClipboard(text) {
-                    navigator.clipboard.writeText(text).then(() => {
-                        // Afficher une notification de succès
-                        const notification = document.createElement('div');
-                        notification.textContent = 'Copié dans le presse-papiers !';
-                        notification.style.cssText = `
-                            position: fixed;
-                            top: 20px;
-                            right: 20px;
-                            background: #28a745;
-                            color: white;
-                            padding: 10px 15px;
-                            border-radius: 5px;
-                            z-index: 1000;
-                            font-family: Arial, sans-serif;
-                        `;
-                        document.body.appendChild(notification);
-                        
-                        setTimeout(() => {
-                            document.body.removeChild(notification);
-                        }, 2000);
-                    }).catch(err => {
-                        console.error('Erreur lors de la copie:', err);
-                        alert('Erreur lors de la copie dans le presse-papiers');
-                    });
                 },
                 
                 startStatusPolling() {

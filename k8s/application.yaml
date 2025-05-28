@@ -70,13 +70,13 @@ spec:
             cpu: "1000m"
         livenessProbe:
           httpGet:
-            path: /api/v1/health
+            path: /status # Changé de /api/v1/health
             port: 8000
           initialDelaySeconds: 60
           periodSeconds: 30
         readinessProbe:
           httpGet:
-            path: /api/v1/health
+            path: /status # Changé de /api/v1/health
             port: 8000
           initialDelaySeconds: 10
           periodSeconds: 5
@@ -195,6 +195,9 @@ spec:
       containers:
       - name: frontend
         image: rg.fr-par.scw.cloud/namespace-ecstatic-einstein/epicsandev/alphabetasolver-frontend:main
+        env:
+        - name: MASTER_NODE_URL
+          value: "master-node:8000"
         ports:
         - containerPort: 80
         resources:
@@ -240,11 +243,11 @@ metadata:
   namespace: gto-solver
 spec:
   accessModes:
-  - ReadWriteMany
+  - ReadWriteOnce
   resources:
     requests:
       storage: 100Gi
-  storageClassName: shared-storage
+  storageClassName: sbs-default
 
 ---
 # Application Logs PVC
@@ -255,11 +258,11 @@ metadata:
   namespace: gto-solver
 spec:
   accessModes:
-  - ReadWriteMany
+  - ReadWriteOnce
   resources:
     requests:
       storage: 50Gi
-  storageClassName: shared-storage
+  storageClassName: sbs-default
 
 ---
 # Horizontal Pod Autoscaler for Compute Nodes

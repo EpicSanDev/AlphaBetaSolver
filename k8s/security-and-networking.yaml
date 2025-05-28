@@ -6,7 +6,7 @@ metadata:
   namespace: gto-solver
 type: Opaque
 stringData:
-  database-url: postgresql://gto_user:CHANGE_THIS_PASSWORD@postgres:5432/gto_solver
+  database-url: postgresql://gto_user:MonMotDePassePostgresTresSecurise123!@postgres:5432/gto_solver
   secret-key: CHANGE_THIS_SECRET_KEY_IN_PRODUCTION
   jwt-secret-key: CHANGE_THIS_JWT_SECRET_KEY_IN_PRODUCTION
 
@@ -20,7 +20,7 @@ metadata:
 type: Opaque
 stringData:
   username: gto_user
-  password: CHANGE_THIS_PASSWORD
+  password: MonMotDePassePostgresTresSecurise123!
 
 ---
 # RabbitMQ Secrets

@@ -26,6 +26,7 @@ FROM python:3.11-slim
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     libjsoncpp25 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app user
@@ -43,6 +44,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy Python source code
 COPY backend/python/ ./python/
+
+# Copy compute client for distribution
+COPY compute_client.py ./
 
 # Create necessary directories
 RUN mkdir -p logs data && \
