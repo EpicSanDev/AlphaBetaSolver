@@ -3,7 +3,7 @@ import logging
 import signal
 import sys
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from prometheus_client import start_http_server
@@ -149,16 +149,23 @@ app.include_router(endpoints.router, prefix=settings.API_V1_STR)
 @app.websocket("/ws")
 async def websocket_monitoring(websocket: WebSocket):
     """WebSocket endpoint for real-time monitoring. No authentication required."""
+    client_addr = f"{websocket.client.host}:{websocket.client.port}" if websocket.client else "Unknown client"
     try:
         await websocket.accept()
+        logger.info(f"WebSocket connection established with {client_addr}")
         await websocket.send_text("Connection established")
         
         while True:
             data = await websocket.receive_text()
+            logger.debug(f"Received data from {client_addr}: {data}")
             await websocket.send_text(f"Echo: {data}")
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket client {client_addr} disconnected.")
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-        await websocket.close()
+        logger.error(f"WebSocket error with {client_addr}: {e}")
+        # Starlette/Uvicorn should handle closing the WebSocket connection
+        # in case of unhandled exceptions. Explicitly calling websocket.close() here
+        # can lead to RuntimeError if the socket is already being closed.
 
 
 # Simple WebSocket test endpoint

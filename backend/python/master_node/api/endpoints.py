@@ -184,6 +184,23 @@ async def cancel_simulation(
         logger.error(f"Erreur lors de l'annulation de la simulation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/simulations/{simulation_id}/results")
+async def get_simulation_results(
+    simulation_id: str,
+    simulation_manager = Depends(get_simulation_manager)
+):
+    """Obtenir les résultats d'une simulation."""
+    try:
+        results = await simulation_manager.get_simulation_results(simulation_id)
+        if results is None: # Check for None to indicate simulation not found or no results
+            raise HTTPException(status_code=404, detail="Résultats de la simulation non trouvés")
+        return results
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des résultats de la simulation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Endpoints pour les nœuds de calcul
 @router.post("/compute-nodes/register")
 async def register_compute_node(

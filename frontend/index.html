@@ -32,6 +32,9 @@
                     <button class="nav-tab" :class="{active: activeTab === 'status'}" @click="activeTab = 'status'">
                         Système
                     </button>
+                    <button class="nav-tab" :class="{active: activeTab === 'results'}" @click="activeTab = 'results'">
+                        Résultats
+                    </button>
                     <div class="connection-status">
                         <span class="status-indicator" :class="{connected: isRealtimeConnected, disconnected: !isRealtimeConnected}"></span>
                         <span class="status-text">{{ isRealtimeConnected ? 'Temps réel' : 'Hors ligne' }}</span>
@@ -301,6 +304,67 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- Tab: Résultats -->
+                <div v-if="activeTab === 'results'">
+                    <h3>Résultats des Simulations</h3>
+                    
+                    <div v-if="loadingResults" class="loading">
+                        Chargement des résultats...
+                    </div>
+                    
+                    <div v-if="!loadingResults && completedSimulations.length === 0">
+                        <p style="text-align: center; color: #666; padding: 40px;">
+                            Aucune simulation terminée à afficher.
+                        </p>
+                    </div>
+                    
+                    <div v-if="!loadingResults && completedSimulations.length > 0" class="results-layout">
+                        <div class="results-list">
+                            <h4>Simulations Terminées</h4>
+                            <ul>
+                                <li v-for="sim in completedSimulations" :key="sim.simulation_id" 
+                                    @click="viewResults(sim.simulation_id)"
+                                    :class="{ active: selectedSimulationResult && selectedSimulationResult.simulation_id === sim.simulation_id }">
+                                    {{ sim.name || sim.simulation_id }} ({{ sim.status }})
+                                    <br><small>{{ new Date(sim.completed_at).toLocaleString() }}</small>
+                                </li>
+                            </ul>
+                        </div>
+                        
+                        <div class="results-detail" v-if="selectedSimulationResult">
+                            <h4>Détails de la Simulation: {{ selectedSimulationResult.name || selectedSimulationResult.simulation_id }}</h4>
+                            <p><strong>ID:</strong> {{ selectedSimulationResult.simulation_id }}</p>
+                            <p><strong>Type:</strong> {{ selectedSimulationResult.simulation_type }}</p>
+                            <p><strong>Statut:</strong> {{ selectedSimulationResult.status }}</p>
+                            <p><strong>Créée le:</strong> {{ new Date(selectedSimulationResult.created_at).toLocaleString() }}</p>
+                            <p><strong>Terminée le:</strong> {{ new Date(selectedSimulationResult.completed_at).toLocaleString() }}</p>
+                            <p><strong>Durée:</strong> {{ formatTime(selectedSimulationResult.duration_seconds) }}</p>
+                            <p><strong>Itérations:</strong> {{ selectedSimulationResult.iterations_completed }}</p>
+                            <p><strong>Exploitabilité finale:</strong> {{ selectedSimulationResult.final_exploitability ? selectedSimulationResult.final_exploitability.toFixed(5) : 'N/A' }}</p>
+                            
+                            <!-- Ici, on pourrait intégrer le StrategyVisualizer si les données sont disponibles -->
+                            <div v-if="selectedSimulationResult.strategy_data">
+                                <h5>Stratégie GTO</h5>
+                                <!-- Assurez-vous que StrategyVisualizer est enregistré globalement ou localement -->
+                                <!-- <strategy-visualizer :strategy="selectedSimulationResult.strategy_data"></strategy-visualizer> -->
+                                <pre>{{ JSON.stringify(selectedSimulationResult.strategy_data, null, 2) }}</pre>
+                            </div>
+                            <div v-else>
+                                <p>Aucune donnée de stratégie disponible pour cette simulation.</p>
+                            </div>
+                             <button @click="ApiGateway.exportStrategyAsJson(selectedSimulationResult.strategy_data)" class="btn btn-secondary" v-if="selectedSimulationResult.strategy_data">
+                                Exporter la stratégie (JSON)
+                            </button>
+                        </div>
+                         <div class="results-detail" v-else>
+                            <p style="text-align: center; color: #666; padding: 40px;">
+                                Sélectionnez une simulation pour voir les détails.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
                 <div v-if="activeTab === 'status'">
                     <h3>Statut du système</h3>
                     
@@ -394,7 +458,13 @@
                     showClientInstructions: false,
                     
                     // Polling
-                    statusInterval: null
+                    statusInterval: null,
+
+                    // Résultats
+                    completedSimulations: [],
+                    simulationResults: {},
+                    loadingResults: false,
+                    selectedSimulationResult: null
                 }
             },
             
@@ -425,6 +495,7 @@
                 }
                 
                 this.startStatusPolling();
+                this.loadCompletedSimulations(); // Charger les résultats au montage
                 console.log('Vue app mounted successfully');
             },
             
@@ -478,9 +549,12 @@
                         estimated_time_remaining
                     };
                     
-                    // Si la simulation est terminée, recharger la liste
+                    // Si la simulation est terminée, recharger la liste et les résultats
                     if (status === 'completed' || status === 'failed') {
                         this.loadSimulations();
+                        if (this.activeTab === 'results') {
+                             this.loadCompletedSimulations();
+                        }
                     }
                     
                     console.log(`Simulation ${simulation_id} mise à jour:`, data);
@@ -546,6 +620,48 @@
                     } finally {
                         this.isCreating = false;
                     }
+                },
+                
+                async loadCompletedSimulations() {
+                    this.loadingResults = true;
+                    try {
+                        const response = await ApiGateway.listSimulations({ status: 'completed' });
+                        this.completedSimulations = response.data;
+                        // Optionnel: précharger les détails des résultats pour chaque simulation
+                        // for (const sim of this.completedSimulations) {
+                        //     await this.loadSimulationResultDetails(sim.simulation_id);
+                        // }
+                    } catch (error) {
+                        console.error('Erreur lors du chargement des simulations terminées:', error);
+                    } finally {
+                        this.loadingResults = false;
+                    }
+                },
+
+                async loadSimulationResultDetails(simulationId) {
+                    if (this.simulationResults[simulationId]) {
+                        this.selectedSimulationResult = this.simulationResults[simulationId];
+                        return;
+                    }
+                    this.loadingResults = true;
+                    try {
+                        const response = await ApiGateway.getSimulationResults(simulationId);
+                        this.simulationResults[simulationId] = response.data;
+                        this.selectedSimulationResult = response.data;
+                    } catch (error) {
+                        console.error(`Erreur lors du chargement des résultats pour ${simulationId}:`, error);
+                        alert(`Impossible de charger les résultats pour la simulation ${simulationId}`);
+                        this.selectedSimulationResult = null;
+                    } finally {
+                        this.loadingResults = false;
+                    }
+                },
+
+                async viewResults(simulationId) {
+                    this.activeTab = 'results'; // S'assurer que l'onglet est actif
+                    await this.loadSimulationResultDetails(simulationId);
+                    // Ici, on pourrait intégrer ou naviguer vers une vue détaillée des résultats
+                    // Pour l'instant, on stocke juste dans selectedSimulationResult
                 },
                 
                 async loadSimulations() {

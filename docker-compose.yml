@@ -100,7 +100,7 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     container_name: gto-compute-node-1
-    command: ["python", "-m", "compute_node.agent", "--queue-name", "preflop_tasks"]
+    command: ["python", "python/start_compute_agent.py", "--queue", "preflop_tasks"]
     environment:
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
@@ -127,7 +127,7 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     container_name: gto-compute-node-2
-    command: ["python", "-m", "compute_node.agent", "--queue-name", "postflop_tasks"]
+    command: ["python", "python/start_compute_agent.py", "--queue", "postflop_tasks"]
     environment:
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672

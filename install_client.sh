@@ -34,7 +34,10 @@ check_python() {
 
     # Vérifier la version de Python
     PYTHON_VERSION=$($PYTHON_CMD -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-    if (( $(echo "$PYTHON_VERSION < 3.7" | bc -l) )); then
+    PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
+    PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
+    
+    if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 7 ]); then
         log_error "Python $PYTHON_VERSION détecté. Ce script nécessite Python 3.7 ou supérieur."
         exit 1
     fi
@@ -78,8 +81,9 @@ install_dependencies() {
     log_info "Installation des dépendances..."
     $PYTHON_CMD -m pip install --upgrade pip
     
-    # Installer les dépendances via compute_client.py
-    $PYTHON_CMD compute_client.py --install
+    # Installer directement les dépendances requises
+    log_info "Installation des dépendances requises..."
+    $PYTHON_CMD -m pip install aiohttp>=3.8.0 psutil>=5.8.0 asyncio-mqtt>=0.11.0
     
     if [ $? -ne 0 ]; then
         log_error "Échec lors de l'installation des dépendances."

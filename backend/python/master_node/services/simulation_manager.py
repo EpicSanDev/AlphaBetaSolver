@@ -70,22 +70,40 @@ class SimulationManager:
         self.task_queue = task_queue if task_queue is not None else TaskQueue()
         self.storage_path = storage_path
         self.running_simulations: Dict[str, asyncio.Task] = {}
+        self.results_consumer_task: Optional[asyncio.Task] = None # Ajout pour le consommateur de résultats
 
         # Créer le répertoire de stockage
         os.makedirs(storage_path, exist_ok=True)
 
     async def start(self):
         """Démarrer le gestionnaire de simulations."""
-        # Connecter la file de tâches si elle n'est pas déjà connectée
         if (
             hasattr(self.task_queue, "connected") and
             not self.task_queue.connected
         ):
             await self.task_queue.connect()
+        
+        # Lancer le consommateur de résultats une seule fois en tâche de fond
+        if self.results_consumer_task is None or self.results_consumer_task.done():
+            if not self.task_queue.connected: # S'assurer que la connexion est établie
+                await self.task_queue.connect()
+            self.results_consumer_task = asyncio.create_task(
+                self.task_queue.consume_results(self._process_task_result_global)
+            )
+            logger.info("Results consumer task started.")
+        
         logger.info("Simulation manager started")
 
     async def stop(self):
         """Arrêter le gestionnaire de simulations."""
+        # Annuler la tâche de consommation des résultats
+        if self.results_consumer_task and not self.results_consumer_task.done():
+            self.results_consumer_task.cancel()
+            try:
+                await self.results_consumer_task
+            except asyncio.CancelledError:
+                logger.info("Results consumer task cancelled.")
+        
         # Annuler toutes les simulations en cours
         for simulation_id, task in self.running_simulations.items():
             if not task.done():
@@ -234,66 +252,127 @@ class SimulationManager:
         completed_tasks = 0
         total_tasks = len(simulation.task_ids)
 
-        # Démarrer la consommation des résultats
-        await self.task_queue.consume_results(
-            lambda result: self._process_task_result(
-                simulation.simulation_id, result
-            )
-        )
+        if total_tasks == 0:
+            logger.warning(f"Simulation {simulation.simulation_id} n'a aucune tâche à monitorer.")
+            simulation.status = SimulationStatus.COMPLETED 
+            simulation.progress_percentage = 100.0
+            simulation.updated_at = datetime.now()
+            await self._save_simulation(simulation)
+            logger.info(f"Simulation {simulation.simulation_id} considérée comme terminée (aucune tâche).")
+            return
 
-        # Attendre que toutes les tâches soient terminées
+        # La consommation des résultats est gérée globalement par self.results_consumer_task
+        # lancée dans la méthode start() du SimulationManager.
+
+        logger.info(f"Monitoring progress for simulation {simulation.simulation_id} with {total_tasks} tasks.")
         while completed_tasks < total_tasks:
             await asyncio.sleep(10)  # Vérifier toutes les 10 secondes
 
+            if simulation.status == SimulationStatus.CANCELLED:
+                logger.info(f"Monitoring de {simulation.simulation_id} arrêté car annulée.")
+                break
+            if simulation.status == SimulationStatus.FAILED:
+                logger.info(f"Monitoring de {simulation.simulation_id} arrêté car échouée.")
+                break
+            
             # Calculer le progrès
-            completed_tasks = await self._count_completed_tasks(
+            current_completed_tasks = await self._count_completed_tasks(
                 simulation.simulation_id
             )
-            simulation.progress_percentage = (
-                completed_tasks / total_tasks
-            ) * 100
+            # S'assurer que completed_tasks ne dépasse pas total_tasks
+            completed_tasks = min(current_completed_tasks, total_tasks)
+            
+            new_progress_percentage = (completed_tasks / total_tasks) * 100 if total_tasks > 0 else 0
+
+            if simulation.progress_percentage != new_progress_percentage:
+                 logger.info(f"Simulation {simulation.simulation_id} progress: {new_progress_percentage:.2f}% ({completed_tasks}/{total_tasks})")
+            
+            simulation.progress_percentage = new_progress_percentage
+            simulation.iterations_completed = completed_tasks # Approximation, dépend de la granularité des tâches
             simulation.updated_at = datetime.now()
 
             # Estimer le temps restant
-            if completed_tasks > 0:
-                elapsed_time = (datetime.now() - simulation.created_at).total_seconds()
-                estimated_total_time = elapsed_time * total_tasks / completed_tasks
-                simulation.estimated_time_remaining = int(
-                    estimated_total_time - elapsed_time
-                )
+            if completed_tasks > 0 and simulation.status == SimulationStatus.RUNNING:
+                elapsed_time_since_creation = (datetime.now() - simulation.created_at).total_seconds()
+                elapsed_time_since_creation = max(0, elapsed_time_since_creation)
+
+                estimated_total_time = elapsed_time_since_creation * total_tasks / completed_tasks
+                time_remaining = int(estimated_total_time - elapsed_time_since_creation)
+                simulation.estimated_time_remaining = max(0, time_remaining)
+            elif completed_tasks == 0 and simulation.status == SimulationStatus.RUNNING:
+                # Si aucune tâche n'est encore complétée, on ne peut pas estimer, ou on utilise l'estimation initiale
+                pass
+
 
             await self._save_simulation(simulation)
 
-            if simulation.status == SimulationStatus.CANCELLED:
-                break
 
-        if simulation.status != SimulationStatus.CANCELLED:
-            # Agréger les résultats finaux
+        # Après la boucle
+        if simulation.status == SimulationStatus.RUNNING: # Si toujours RUNNING, c'est qu'elle est complétée
+            logger.info(f"Simulation {simulation.simulation_id} a complété toutes ses tâches ({completed_tasks}/{total_tasks}). Agrégation des résultats.")
             await self._aggregate_results(simulation)
             simulation.status = SimulationStatus.COMPLETED
             simulation.progress_percentage = 100.0
             simulation.updated_at = datetime.now()
             await self._save_simulation(simulation)
+            logger.info(f"Simulation terminée et marquée COMPLETED: {simulation.simulation_id}")
+        elif simulation.status == SimulationStatus.COMPLETED:
+             logger.info(f"Simulation {simulation.simulation_id} déjà marquée comme COMPLETED.")
+        # Les cas CANCELLED et FAILED sont déjà loggés dans la boucle.
 
-            logger.info(f"Simulation terminée: {simulation.simulation_id}")
 
-    async def _process_task_result(
-        self, simulation_id: str, result_data: Dict[str, Any]
-    ):
-        """Traiter le résultat d'une tâche."""
+    async def _process_task_result_global(self, result_data: Dict[str, Any]):
+        """Traiter le résultat d'une tâche de manière globale."""
         try:
-            # Sauvegarder le résultat partiel
-            result_file = (
-                f"{self.storage_path}/{simulation_id}_task_"
-                f"{result_data['task_id']}.json"
-            )
-            async with aiofiles.open(result_file, "w") as f:
-                await f.write(json.dumps(result_data))
+            task_id_from_result = result_data.get('task_id')
+            if not task_id_from_result:
+                logger.error(f"Résultat de tâche reçu sans task_id: {result_data}")
+                return
 
-            logger.info(f"Résultat de tâche traité: {result_data['task_id']}")
+            # Extraire le simulation_id du task_id (ex: "sim_id_batch_0")
+            parts = task_id_from_result.split('_batch_')
+            if len(parts) < 2: # Gère aussi le cas où _batch_ n'est pas dans le nom
+                 # Tenter d'extraire le simulation_id d'un champ dédié si disponible
+                actual_simulation_id = result_data.get('simulation_id')
+                if not actual_simulation_id:
+                    logger.error(f"Impossible d'extraire simulation_id de task_id: {task_id_from_result}")
+                    return
+            else:
+                actual_simulation_id = parts[0]
+
+
+            # Vérifier si cette simulation est gérée par ce manager
+            if actual_simulation_id not in self.simulations:
+                logger.warning(
+                    f"Résultat reçu pour une simulation inconnue ou non gérée: {actual_simulation_id}. "
+                    f"Task ID: {task_id_from_result}. Ce message peut être normal si la simulation a été supprimée ou annulée."
+                )
+                # On ne traite pas plus loin si la simulation n'est plus activement gérée.
+                # Cela évite des erreurs si une simulation est annulée et ses résultats arrivent tardivement.
+                return
+
+            # Mettre à jour les informations de la simulation concernée si nécessaire
+            # Par exemple, si le résultat contient des informations sur l'exploitabilité actuelle
+            target_simulation = self.simulations.get(actual_simulation_id)
+            if target_simulation and result_data.get('success'):
+                task_result_payload = result_data.get('result_data', {})
+                if 'exploitability' in task_result_payload:
+                    target_simulation.current_exploitability = task_result_payload['exploitability']
+                # Note: iterations_completed est mis à jour par _monitor_simulation_progress
+                target_simulation.updated_at = datetime.now()
+                # Pas besoin de sauvegarder ici, _monitor_simulation_progress le fait.
+
+            # Sauvegarder le résultat partiel
+            result_file_name = f"{actual_simulation_id}_task_{task_id_from_result}.json"
+            result_file_path = os.path.join(self.storage_path, result_file_name)
+            
+            async with aiofiles.open(result_file_path, "w") as f:
+                await f.write(json.dumps(result_data, indent=2))
+
+            logger.info(f"Résultat de tâche traité et sauvegardé: {result_file_name} pour simulation {actual_simulation_id}")
 
         except Exception as e:
-            logger.error(f"Erreur lors du traitement du résultat de tâche: {e}")
+            logger.error(f"Erreur lors du traitement du résultat de tâche global: {e}", exc_info=True)
 
     async def _count_completed_tasks(self, simulation_id: str) -> int:
         """Compter le nombre de tâches terminées pour une simulation."""

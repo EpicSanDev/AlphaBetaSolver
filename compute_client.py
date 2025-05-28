@@ -38,13 +38,25 @@ logger = logging.getLogger(__name__)
 class ComputeClient:
     """Client de calcul distribué."""
     
-    def __init__(self, master_url: str, node_id: Optional[str] = None, max_concurrent_tasks: int = None):
+    def __init__(self, master_url: str, node_id: Optional[str] = None, max_concurrent_tasks: int = None, debug_mode: bool = False, dump_tasks: bool = False):
         self.master_url = master_url.rstrip('/')
         self.node_id = node_id or f"compute-client-{str(uuid.uuid4())[:8]}"
         self.max_concurrent_tasks = max_concurrent_tasks or min(psutil.cpu_count(), 4)
         self.running = False
         self.current_tasks = {}
         self.session = None
+        self.debug_mode = debug_mode
+        self.dump_tasks = dump_tasks
+        
+        # Configurer le niveau de log si debug_mode est activé
+        if debug_mode:
+            logger.setLevel(logging.DEBUG)
+            logger.debug("Mode debug activé")
+            
+        # Créer un dossier pour sauvegarder les tâches si dump_tasks est activé
+        if dump_tasks:
+            os.makedirs("task_dumps", exist_ok=True)
+            logger.info("Mode dump des tâches activé, les tâches seront sauvegardées dans le dossier 'task_dumps'")
         
         # Informations système
         self.system_info = self._get_system_info()
@@ -190,8 +202,42 @@ class ComputeClient:
                     params={"node_id": self.node_id}
                 ) as response:
                     if response.status == 200:
-                        task_data = await response.json()
-                        await self._process_task(task_data)
+                        try:
+                            task_data = await response.json()
+                            # Log the raw task data for debugging
+                            logger.debug(f"Tâche reçue du serveur: {task_data}")
+                            
+                            # Sauvegarder la tâche si dump_tasks est activé
+                            if self.dump_tasks:
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                dump_file = f"task_dumps/task_{timestamp}.json"
+                                with open(dump_file, 'w') as f:
+                                    json.dump(task_data, f, indent=2)
+                                logger.debug(f"Tâche sauvegardée dans {dump_file}")
+                            
+                            # Si les données sont une liste, prendre le premier élément
+                            if isinstance(task_data, list) and task_data:
+                                logger.info("Tâche reçue sous forme de liste, extraction du premier élément")
+                                task_data = task_data[0]
+                            
+                            # Si task_data est un dictionnaire mais avec une structure différente
+                            if isinstance(task_data, dict) and "id" in task_data and not "task_id" in task_data:
+                                logger.info("Format de tâche non standard détecté, adaptation du format")
+                                task_data["task_id"] = task_data.pop("id")
+                            
+                            # Vérifier que les données de tâche sont valides
+                            if not task_data or not task_data.get("task_id"):
+                                logger.warning(f"Tâche reçue sans ID valide, ignorée: {task_data}")
+                                await asyncio.sleep(5)
+                                continue
+                                
+                            await self._process_task(task_data)
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"Erreur de décodage JSON lors de la récupération de tâche: {e}")
+                            # Log the raw response
+                            raw_text = await response.text()
+                            logger.debug(f"Réponse brute reçue: {raw_text[:200]}")
+                            await asyncio.sleep(5)
                     elif response.status == 204:
                         # Pas de tâches disponibles
                         await asyncio.sleep(10)
@@ -208,6 +254,10 @@ class ComputeClient:
         task_id = task_data.get("task_id")
         task_type = task_data.get("task_type")
         
+        if not task_id:
+            logger.warning("Tentative de traitement d'une tâche sans ID, ignorée")
+            return
+            
         logger.info(f"Démarrage de la tâche: {task_id} (type: {task_type})")
         
         # Créer une tâche asyncio pour le traitement
@@ -232,16 +282,31 @@ class ComputeClient:
     
     async def _execute_task(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """Exécuter une tâche de calcul."""
+        task_id = task_data.get("task_id", "unknown")
         task_type = task_data.get("task_type")
         params = task_data.get("params", {})
         
+        # Mode test pour vérifier si le client fonctionne sans binaire
+        test_mode = os.environ.get("GTO_CLIENT_TEST_MODE", "").lower() in ["1", "true", "yes"]
+        if test_mode:
+            logger.info(f"Mode test activé, simulation de calcul pour la tâche {task_id}")
+            await asyncio.sleep(2)  # Simuler un temps de calcul
+            return {
+                "status": "success",
+                "task_id": task_id,
+                "result": {
+                    "simulation": True,
+                    "message": "Résultat de test"
+                }
+            }
+            
         # Vérifier si le binaire de calcul existe
         backend_binary = "/app/backend/build/src/PokerSolver"
         if not os.path.exists(backend_binary):
             # Essayer un chemin local
             backend_binary = "./backend/build/src/PokerSolver"
             if not os.path.exists(backend_binary):
-                raise Exception("Binaire de calcul non trouvé")
+                raise Exception(f"Binaire de calcul non trouvé. Recherché dans: /app/backend/build/src/PokerSolver et ./backend/build/src/PokerSolver")
         
         # Préparer les paramètres de la tâche
         task_params = {
@@ -267,32 +332,75 @@ class ComputeClient:
         
         # Parser le résultat JSON
         try:
-            result = json.loads(stdout.decode())
+            result_text = stdout.decode().strip()
+            if not result_text:
+                raise Exception("Résultat vide retourné par le binaire")
+                
+            result = json.loads(result_text)
             return result
         except json.JSONDecodeError as e:
+            # Log the raw output for debugging
+            logger.error(f"JSON invalide reçu du binaire: '{stdout.decode()[:100]}...'")
             raise Exception(f"Erreur de parsing du résultat: {e}")
     
     async def _send_task_result(self, task_id: str, result: Optional[Dict], status: str, error: Optional[str] = None):
         """Envoyer le résultat d'une tâche au maître."""
+        if not task_id:
+            logger.warning("Tentative d'envoi de résultat pour une tâche sans ID, ignorée")
+            return
+            
+        # Format API v1 attendu par le serveur:
+        # - task_id: str (obligatoire)
+        # - status: str (obligatoire): 'completed', 'failed', 'error', 'cancelled'
+        # - results: dict (obligatoire): les résultats réels de la tâche
+        # - execution_time: float (optionnel): temps d'exécution en millisecondes
+        # - memory_usage: float (optionnel): utilisation mémoire en MB
+        # - error_message: str (optionnel): message d'erreur si statut error/failed
+        
+        # Collecter les métriques d'exécution
+        process = psutil.Process(os.getpid())
+        memory_usage = process.memory_info().rss / (1024 * 1024)  # MB
+        
         result_data = {
             "task_id": task_id,
-            "node_id": self.node_id,
             "status": status,
-            "result": result,
-            "error": error,
-            "completed_at": datetime.now().isoformat()
+            "results": result or {},  # Champ renommé de "result" à "results"
+            "execution_time": 0,  # Valeur à remplir si disponible
+            "memory_usage": memory_usage
         }
+        
+        # Ajouter le message d'erreur si présent
+        if error:
+            result_data["error_message"] = error
+        
+        if self.dump_tasks:
+            # Sauvegarder les données de la tâche pour debugging
+            dump_file = f"task_result_{task_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            with open(dump_file, 'w') as f:
+                json.dump(result_data, f, indent=2)
+            logger.info(f"Données de résultat sauvegardées dans {dump_file}")
         
         try:
             async with self.session.post(
                 f"{self.master_url}/api/v1/tasks/results",
                 json=result_data
             ) as response:
-                if response.status != 200:
-                    logger.warning(f"Erreur lors de l'envoi du résultat: {response.status}")
+                if response.status == 422:
+                    # Log détaillé en cas d'erreur de validation
+                    error_data = await response.json()
+                    logger.error(f"Erreur de validation (422): {error_data}")
+                    if self.debug_mode:
+                        logger.debug(f"Données envoyées: {result_data}")
+                elif response.status != 200:
+                    response_text = await response.text()
+                    logger.warning(f"Erreur lors de l'envoi du résultat: {response.status} - {response_text}")
+                else:
+                    logger.info(f"Résultat de la tâche {task_id} envoyé avec succès (statut: {status})")
                     
         except Exception as e:
             logger.error(f"Impossible d'envoyer le résultat: {e}")
+            if self.debug_mode:
+                logger.exception("Détails de l'erreur:")
     
     async def _system_monitor_loop(self):
         """Surveillance système pour détecter les surcharges."""
@@ -355,6 +463,8 @@ async def main():
     parser.add_argument("--max-tasks", type=int, help="Nombre maximum de tâches simultanées")
     parser.add_argument("--install", action="store_true", help="Installer les dépendances")
     parser.add_argument("--verbose", "-v", action="store_true", help="Mode verbeux")
+    parser.add_argument("--debug", "-d", action="store_true", help="Mode debug (logs détaillés)")
+    parser.add_argument("--dump-tasks", action="store_true", help="Enregistrer les tâches reçues dans un fichier JSON")
     
     args = parser.parse_args()
     
@@ -378,7 +488,9 @@ async def main():
     client = ComputeClient(
         master_url=args.master_url,
         node_id=args.node_id,
-        max_concurrent_tasks=args.max_tasks
+        max_concurrent_tasks=args.max_tasks,
+        debug_mode=args.debug,
+        dump_tasks=args.dump_tasks
     )
     
     try:

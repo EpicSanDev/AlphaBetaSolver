@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test API Tasks - GTO Poker Solver</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .debug-panel {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        
+        textarea.form-control {
+            min-height: 120px;
+        }
+        
+        .response-panel {
+            background: #f8f9fa;
+            border-radius: 4px;
+            padding: 15px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #e9ecef;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #0069d9;
+        }
+        
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+        
+        .tab.active {
+            border: 1px solid #ddd;
+            border-bottom-color: white;
+            border-radius: 4px 4px 0 0;
+            margin-bottom: -1px;
+            background-color: white;
+            font-weight: bold;
+        }
+        
+        .validation-result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        
+        .validation-valid {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .validation-invalid {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="container">
+            <h1>🃏 GTO Poker Solver - Test API Tasks</h1>
+            
+            <div class="tabs">
+                <div class="tab" :class="{ active: activeTab === 'get' }" @click="activeTab = 'get'">Récupérer une tâche</div>
+                <div class="tab" :class="{ active: activeTab === 'submit' }" @click="activeTab = 'submit'">Soumettre des résultats</div>
+                <div class="tab" :class="{ active: activeTab === 'validate' }" @click="activeTab = 'validate'">Valider format</div>
+            </div>
+            
+            <div class="debug-panel">
+                <!-- Messages d'erreur ou de succès -->
+                <div v-if="error" class="error">{{ error }}</div>
+                <div v-if="success" class="success">{{ success }}</div>
+                
+                <!-- Panneau GET Task -->
+                <div v-if="activeTab === 'get'">
+                    <h2>Récupérer une tâche</h2>
+                    
+                    <div class="form-group">
+                        <label>ID du nœud de calcul</label>
+                        <input v-model="nodeId" class="form-control" placeholder="compute-node-123">
+                    </div>
+                    
+                    <button @click="getNextTask" class="btn btn-primary" :disabled="loading">
+                        {{ loading ? 'Chargement...' : 'Récupérer tâche' }}
+                    </button>
+                    
+                    <div v-if="taskData" style="margin-top: 20px;">
+                        <h3>Tâche récupérée:</h3>
+                        <div class="response-panel">{{ JSON.stringify(taskData, null, 2) }}</div>
+                    </div>
+                </div>
+                
+                <!-- Panneau Submit Results -->
+                <div v-if="activeTab === 'submit'">
+                    <h2>Soumettre les résultats d'une tâche</h2>
+                    
+                    <div class="form-group">
+                        <label>ID de la tâche</label>
+                        <input v-model="taskResult.task_id" class="form-control" placeholder="task-123">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Statut</label>
+                        <select v-model="taskResult.status" class="form-control">
+                            <option value="completed">Completed</option>
+                            <option value="failed">Failed</option>
+                            <option value="error">Error</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Temps d'exécution (ms)</label>
+                        <input v-model.number="taskResult.execution_time" type="number" class="form-control" placeholder="1000">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Utilisation mémoire (MB)</label>
+                        <input v-model.number="taskResult.memory_usage" type="number" class="form-control" placeholder="100">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Résultats (JSON)</label>
+                        <textarea v-model="resultsJson" class="form-control" placeholder='{"key": "value"}'></textarea>
+                    </div>
+                    
+                    <button @click="submitResults" class="btn btn-primary" :disabled="loading">
+                        {{ loading ? 'Envoi...' : 'Soumettre les résultats' }}
+                    </button>
+                    
+                    <div v-if="submissionResponse" style="margin-top: 20px;">
+                        <h3>Réponse:</h3>
+                        <div class="response-panel">{{ JSON.stringify(submissionResponse, null, 2) }}</div>
+                    </div>
+                </div>
+                
+                <!-- Panneau de validation -->
+                <div v-if="activeTab === 'validate'">
+                    <h2>Valider le format des données</h2>
+                    
+                    <div class="form-group">
+                        <label>Données JSON à valider</label>
+                        <textarea v-model="validateJson" class="form-control" placeholder='{"task_id": "task-123", "status": "completed", "results": {}}'></textarea>
+                    </div>
+                    
+                    <button @click="validateData" class="btn btn-primary">Valider</button>
+                    
+                    <div v-if="validationResult" style="margin-top: 20px;">
+                        <div class="validation-result" :class="validationResult.isValid ? 'validation-valid' : 'validation-invalid'">
+                            <strong>{{ validationResult.isValid ? 'Format valide ✓' : 'Format invalide ✗' }}</strong>
+                            <ul v-if="!validationResult.isValid">
+                                <li v-for="error in validationResult.errors">{{ error }}</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="debug-panel">
+                <h2>Documentation de l'API</h2>
+                
+                <h3>GET /api/v1/tasks/next</h3>
+                <p><strong>Paramètres:</strong> node_id (string) - Identifiant du nœud de calcul</p>
+                <p><strong>Réponse:</strong> Données de la tâche à exécuter</p>
+                
+                <h3>POST /api/v1/tasks/results</h3>
+                <p><strong>Corps de la requête:</strong></p>
+                <pre>{
+  "task_id": "string",       // Identifiant de la tâche (obligatoire)
+  "status": "string",        // 'completed', 'failed', ou 'error' (obligatoire)
+  "execution_time": number,  // Temps d'exécution en millisecondes (optionnel)
+  "memory_usage": number,    // Utilisation mémoire en MB (optionnel)
+  "results": object          // Résultats de la tâche (obligatoire)
+}</pre>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="api-gateway.js"></script>
+    <script>
+        const { createApp } = Vue;
+        
+        createApp({
+            data() {
+                return {
+                    activeTab: 'get',
+                    loading: false,
+                    error: '',
+                    success: '',
+                    
+                    // GET Task
+                    nodeId: 'compute-client-test',
+                    taskData: null,
+                    
+                    // Submit Results
+                    taskResult: {
+                        task_id: '',
+                        status: 'completed',
+                        execution_time: 1000,
+                        memory_usage: 100
+                    },
+                    resultsJson: '{}',
+                    submissionResponse: null,
+                    
+                    // Validation
+                    validateJson: '',
+                    validationResult: null
+                }
+            },
+            
+            methods: {
+                async getNextTask() {
+                    if (!this.nodeId) {
+                        this.error = "Veuillez saisir l'ID du nœud de calcul";
+                        return;
+                    }
+                    
+                    this.loading = true;
+                    this.error = '';
+                    this.success = '';
+                    
+                    try {
+                        const response = await ApiGateway.getNextTask(this.nodeId);
+                        this.taskData = response.data;
+                        this.success = "Tâche récupérée avec succès";
+                        
+                        // Préremplir les données de soumission
+                        if (this.taskData && this.taskData.task_id) {
+                            this.taskResult.task_id = this.taskData.task_id;
+                        }
+                    } catch (error) {
+                        this.error = error.response?.data?.detail || error.message || "Erreur lors de la récupération de la tâche";
+                        console.error("Erreur getNextTask:", error);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                
+                async submitResults() {
+                    this.loading = true;
+                    this.error = '';
+                    this.success = '';
+                    
+                    try {
+                        // Parsing des résultats JSON
+                        let results = {};
+                        try {
+                            results = JSON.parse(this.resultsJson);
+                        } catch (e) {
+                            throw new Error("Format JSON des résultats invalide: " + e.message);
+                        }
+                        
+                        // Création de l'objet de données complet
+                        const data = {
+                            ...this.taskResult,
+                            results: results
+                        };
+                        
+                        // Validation avant envoi
+                        const validation = ApiGateway.validateTaskResultFormat(data);
+                        if (!validation.isValid) {
+                            throw new Error("Données invalides: " + validation.errors.join(", "));
+                        }
+                        
+                        // Soumission
+                        const response = await ApiGateway.submitTaskResults(
+                            data.task_id, 
+                            {
+                                results: data.results,
+                                executionTime: data.execution_time,
+                                memoryUsage: data.memory_usage,
+                                status: data.status
+                            }
+                        );
+                        
+                        this.submissionResponse = response.data;
+                        this.success = "Résultats soumis avec succès";
+                    } catch (error) {
+                        this.error = error.response?.data?.detail || error.message || "Erreur lors de la soumission des résultats";
+                        console.error("Erreur submitResults:", error);
+                        this.submissionResponse = error.response?.data || null;
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                
+                validateData() {
+                    this.error = '';
+                    
+                    try {
+                        const data = JSON.parse(this.validateJson);
+                        this.validationResult = ApiGateway.validateTaskResultFormat(data);
+                    } catch (e) {
+                        this.error = "Format JSON invalide: " + e.message;
+                        this.validationResult = {
+                            isValid: false,
+                            errors: ["Format JSON invalide"]
+                        };
+                    }
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
